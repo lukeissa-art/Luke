@@ -76,6 +76,7 @@ python backtest.py                  # run with current settings
 python backtest.py --optimize       # grid-search params; needs Alpaca data keys
 ```
 Targets in the optimizer: average return ≥0.5% and win rate ≥55%. Update `.env` with the suggested parameters after it finds a set that meets the targets.
+Current default tuned set (from recent run): 5Min bars, EMA 5/13, RSI 7, stop 0.75%, take profit 1.2%, cooldown 15 minutes, 2% position size.
 
 ## Deploy to Railway (always-on)
 
