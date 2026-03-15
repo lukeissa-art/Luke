@@ -29,22 +29,22 @@ class Settings(BaseSettings):
     fast_ema: int = Field(default=5, alias="FAST_EMA")
     slow_ema: int = Field(default=13, alias="SLOW_EMA")
     rsi_period: int = Field(default=7, alias="RSI_PERIOD")
-    rsi_overbought: int = Field(default=78, alias="RSI_OVERBOUGHT")
-    rsi_oversold: int = Field(default=28, alias="RSI_OVERSOLD")
-    min_confidence: float = Field(default=0.35, alias="MIN_CONFIDENCE")
+    rsi_overbought: int = Field(default=80, alias="RSI_OVERBOUGHT")
+    rsi_oversold: int = Field(default=25, alias="RSI_OVERSOLD")
+    min_confidence: float = Field(default=0.40, alias="MIN_CONFIDENCE")
 
     max_notional_per_position: float = Field(
-        default=0.015,
+        default=0.01,
         alias="MAX_NOTIONAL_PER_POSITION",
     )
     max_positions: int = Field(default=1, alias="MAX_POSITIONS")
-    stop_loss_pct: float = Field(default=0.009, alias="STOP_LOSS_PCT")
-    take_profit_pct: float = Field(default=0.020, alias="TAKE_PROFIT_PCT")
-    cooldown_minutes: int = Field(default=30, alias="COOLDOWN_MINUTES")
+    stop_loss_pct: float = Field(default=0.012, alias="STOP_LOSS_PCT")
+    take_profit_pct: float = Field(default=0.024, alias="TAKE_PROFIT_PCT")
+    cooldown_minutes: int = Field(default=45, alias="COOLDOWN_MINUTES")
 
     dry_run: bool = Field(default=True, alias="DRY_RUN")
     order_time_in_force: str = Field(default="day", alias="ORDER_TIME_IN_FORCE")
-    poll_interval_seconds: int = Field(default=180, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=300, alias="POLL_INTERVAL_SECONDS")
 
     @property
     def symbols_list(self) -> list[str]:

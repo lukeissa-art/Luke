@@ -34,15 +34,15 @@ LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back 
 FAST_EMA       = 5
 SLOW_EMA       = 13
 RSI_PERIOD     = 7
-RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "78"))
-RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "28"))
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.35"))
-STOP_LOSS_PCT  = 0.009
-TAKE_PROFIT_PCT = 0.020
+RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "80"))
+RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "25"))
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.40"))
+STOP_LOSS_PCT  = 0.012
+TAKE_PROFIT_PCT = 0.024
 STARTING_CASH  = 100_000.0
-POSITION_SIZE  = 0.015                     # 1.5% of equity per trade
+POSITION_SIZE  = 0.01                      # 1% of equity per trade
 MAX_POSITIONS  = 1
-COOLDOWN_BARS  = 6                         # bars to wait after a trade (5Min bars ≈ 30 minutes)
+COOLDOWN_BARS  = 9                         # bars to wait after a trade (5Min bars ≈ 45 minutes)
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
