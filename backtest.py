@@ -30,7 +30,7 @@ DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 # Symbols can be overridden via env SYMBOLS="AAPL,MSFT" or BACKTEST_SYMBOLS
 SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "BTC/USD,ETH/USD,SOL/USD")).split(",") if s.strip()]
 TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "15Min")
-LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "180"))          # how far back to test (days)
+LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back to test (days)
 FAST_EMA       = 12
 SLOW_EMA       = 26
 RSI_PERIOD     = 14
@@ -49,6 +49,9 @@ TARGET_WIN_RATE   = 55.0
 REQUEST_TIMEOUT = 30
 MAX_RETRIES = 4
 BACKOFF_SECONDS = [2, 4, 8, 15]
+
+# Optimizer limits
+MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "120"))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -405,20 +408,20 @@ def optimize() -> dict[str, Any]:
     Grid search for parameters that hit target return and win rate.
     """
     param_grid = {
-        "timeframe": ["5Min", "15Min"],
+        "timeframe": ["5Min"],
         "fast_ema": [5, 8],
         "slow_ema": [13, 21],
         "rsi_period": [7, 10],
         "stop_loss_pct": [0.0075, 0.01],
-        "take_profit_pct": [0.012, 0.02],
-        "position_size": [0.01, 0.02],
+        "take_profit_pct": [0.012, 0.018],
+        "position_size": [0.01],
         "cooldown_bars": [3, 5],
     }
 
     best: dict[str, Any] | None = None
     combos = list(product(*param_grid.values()))
-    total = len(combos)
-    for idx, combo in enumerate(combos, 1):
+    total = min(len(combos), MAX_COMBOS)
+    for idx, combo in enumerate(combos[:total], 1):
         params = dict(zip(param_grid.keys(), combo))
         summary = run_params_backtest(params)
         if (
