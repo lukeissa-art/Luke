@@ -29,17 +29,17 @@ DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 
 # Symbols can be overridden via env SYMBOLS="..." or BACKTEST_SYMBOLS; default SOL only
 SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "SOL/USD")).split(",") if s.strip()]
-TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "15Min")
+TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "5Min")
 LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back to test (days)
-FAST_EMA       = 12
-SLOW_EMA       = 26
-RSI_PERIOD     = 14
-STOP_LOSS_PCT  = 0.015
-TAKE_PROFIT_PCT = 0.03
+FAST_EMA       = 5
+SLOW_EMA       = 13
+RSI_PERIOD     = 7
+STOP_LOSS_PCT  = 0.0075
+TAKE_PROFIT_PCT = 0.012
 STARTING_CASH  = 100_000.0
 POSITION_SIZE  = 0.02                      # 2% of equity per trade
 MAX_POSITIONS  = 3
-COOLDOWN_BARS  = 10                        # bars to wait after a trade
+COOLDOWN_BARS  = 3                         # bars to wait after a trade
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
