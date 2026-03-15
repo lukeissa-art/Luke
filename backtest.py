@@ -11,7 +11,9 @@ Make sure your .env file is set up with your Alpaca API keys.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
+from itertools import product
 from typing import Any
 
 import requests
@@ -37,9 +39,13 @@ POSITION_SIZE  = 0.02                      # 2% of equity per trade
 MAX_POSITIONS  = 3
 COOLDOWN_BARS  = 10                        # bars to wait after a trade
 
+# Targets for optimization
+TARGET_RETURN_PCT = 0.5
+TARGET_WIN_RATE   = 55.0
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def fetch_crypto_bars(symbol: str, days: int) -> list[dict[str, Any]]:
+def fetch_crypto_bars(symbol: str, days: int, timeframe: str) -> list[dict[str, Any]]:
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     headers = {
@@ -53,7 +59,7 @@ def fetch_crypto_bars(symbol: str, days: int) -> list[dict[str, Any]]:
     while True:
         params = {
             "symbols": symbol,
-            "timeframe": TIMEFRAME,
+            "timeframe": timeframe,
             "start": start.isoformat(),
             "end": end.isoformat(),
             "limit": 10000,
@@ -129,14 +135,19 @@ def detect_market_regime(closes: list[float], period: int = 50) -> str:
     return "trending" if price_range > 0.03 else "ranging"
 
 
-def get_signal(closes: list[float]) -> str:
+def get_signal(
+    closes: list[float],
+    fast_ema: int,
+    slow_ema: int,
+    rsi_period: int,
+) -> str:
     bb_period = 20
-    min_bars  = max(SLOW_EMA + 2, RSI_PERIOD + 2, bb_period + 2)
+    min_bars  = max(slow_ema + 2, rsi_period + 2, bb_period + 2)
     if len(closes) < min_bars:
         return "HOLD"
 
-    fast_s = ema_series(closes, FAST_EMA)
-    slow_s = ema_series(closes, SLOW_EMA)
+    fast_s = ema_series(closes, fast_ema)
+    slow_s = ema_series(closes, slow_ema)
     offset = len(fast_s) - len(slow_s)
     aligned = fast_s[offset:]
 
@@ -146,7 +157,7 @@ def get_signal(closes: list[float]) -> str:
     bullish_cross = fast_prev <= slow_prev and fast_now > slow_now
     bearish_cross  = fast_prev >= slow_prev and fast_now < slow_now
 
-    rsi        = rsi_value(closes, RSI_PERIOD)
+    rsi        = rsi_value(closes, rsi_period)
     last_price = closes[-1]
     uptrend    = fast_now > slow_now
 
@@ -181,7 +192,18 @@ def get_signal(closes: list[float]) -> str:
 
 # ── Backtest engine ───────────────────────────────────────────────────────────
 
-def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
+def backtest_symbol(
+    symbol: str,
+    bars: list[dict],
+    *,
+    fast_ema: int,
+    slow_ema: int,
+    rsi_period: int,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    position_size: float,
+    cooldown_bars: int,
+) -> dict:
     closes = [float(b["c"]) for b in bars]
     times  = [b["t"] for b in bars]
 
@@ -194,7 +216,7 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
     peak_equity = STARTING_CASH
     max_drawdown = 0.0
 
-    min_bars = max(SLOW_EMA + 2, RSI_PERIOD + 2)
+    min_bars = max(slow_ema + 2, rsi_period + 2)
 
     for i in range(min_bars, len(closes)):
         price  = closes[i]
@@ -209,7 +231,7 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
         # Check stop loss / take profit on open position
         if position > 0:
             pnl_pct = (price - entry_price) / entry_price
-            if pnl_pct <= -STOP_LOSS_PCT:
+            if pnl_pct <= -stop_loss_pct:
                 proceeds = position * price
                 cash += proceeds
                 trades.append({
@@ -222,9 +244,9 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
                 })
                 position = 0.0
                 entry_price = 0.0
-                cooldown = COOLDOWN_BARS
+                cooldown = cooldown_bars
                 continue
-            elif pnl_pct >= TAKE_PROFIT_PCT:
+            elif pnl_pct >= take_profit_pct:
                 proceeds = position * price
                 cash += proceeds
                 trades.append({
@@ -237,17 +259,17 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
                 })
                 position = 0.0
                 entry_price = 0.0
-                cooldown = COOLDOWN_BARS
+                cooldown = cooldown_bars
                 continue
 
         if cooldown > 0:
             cooldown -= 1
             continue
 
-        signal = get_signal(window)
+        signal = get_signal(window, fast_ema, slow_ema, rsi_period)
 
         if signal == "BUY" and position == 0:
-            budget = min(equity * POSITION_SIZE, cash * 0.95)
+            budget = min(equity * position_size, cash * 0.95)
             qty    = budget / price
             if qty > 0:
                 cost = qty * price
@@ -269,7 +291,7 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
             })
             position = 0.0
             entry_price = 0.0
-            cooldown = COOLDOWN_BARS
+            cooldown = cooldown_bars
 
     # Close any open position at end
     if position > 0:
@@ -309,28 +331,126 @@ def backtest_symbol(symbol: str, bars: list[dict]) -> dict:
     }
 
 
+def run_params_backtest(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Execute backtest across all symbols for a parameter set.
+    """
+    all_results: list[dict[str, Any]] = []
+    for symbol in SYMBOLS:
+        bars = fetch_crypto_bars(symbol, LOOKBACK_DAYS, params["timeframe"])
+        if len(bars) < 50:
+            continue
+        result = backtest_symbol(
+            symbol,
+            bars,
+            fast_ema=params["fast_ema"],
+            slow_ema=params["slow_ema"],
+            rsi_period=params["rsi_period"],
+            stop_loss_pct=params["stop_loss_pct"],
+            take_profit_pct=params["take_profit_pct"],
+            position_size=params["position_size"],
+            cooldown_bars=params["cooldown_bars"],
+        )
+        all_results.append(result)
+
+    avg_return = (
+        sum(r["total_return_pct"] for r in all_results) / len(all_results)
+        if all_results else 0
+    )
+    avg_win_rate = (
+        sum(r["win_rate"] for r in all_results) / len(all_results)
+        if all_results else 0
+    )
+
+    return {
+        "params": params,
+        "results": all_results,
+        "avg_return_pct": round(avg_return, 2),
+        "avg_win_rate": round(avg_win_rate, 2),
+        "total_trades": sum(r["total_trades"] for r in all_results),
+    }
+
+
+def optimize() -> dict[str, Any]:
+    """
+    Grid search for parameters that hit target return and win rate.
+    """
+    param_grid = {
+        "timeframe": ["5Min", "15Min"],
+        "fast_ema": [5, 8, 12],
+        "slow_ema": [13, 21, 34],
+        "rsi_period": [7, 10, 14],
+        "stop_loss_pct": [0.0075, 0.01, 0.015],
+        "take_profit_pct": [0.012, 0.02, 0.03],
+        "position_size": [0.01, 0.02],
+        "cooldown_bars": [3, 5, 8],
+    }
+
+    best: dict[str, Any] | None = None
+    combos = list(product(*param_grid.values()))
+    total = len(combos)
+    for idx, combo in enumerate(combos, 1):
+        params = dict(zip(param_grid.keys(), combo))
+        summary = run_params_backtest(params)
+        if (
+            summary["avg_return_pct"] >= TARGET_RETURN_PCT
+            and summary["avg_win_rate"] >= TARGET_WIN_RATE
+        ):
+            if best is None or summary["avg_return_pct"] > best["avg_return_pct"]:
+                best = summary
+        # Early break if we already found a strong candidate with high return
+        if best and best["avg_return_pct"] > TARGET_RETURN_PCT + 1.0:
+            break
+        print(
+            f"[{idx}/{total}] "
+            f"return {summary['avg_return_pct']}% "
+            f"win {summary['avg_win_rate']}% "
+            f"params {params}"
+        )
+
+    return best or {}
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    optimize_flag = "--optimize" in sys.argv or os.getenv("OPTIMIZE", "0") == "1"
+
     print("=" * 60)
     print("  BACKTEST RESULTS")
-    print(f"  Period: Last {LOOKBACK_DAYS} days  |  Timeframe: {TIMEFRAME}")
-    print(f"  Strategy: EMA {FAST_EMA}/{SLOW_EMA} + RSI {RSI_PERIOD}")
-    print(f"  Stop Loss: {STOP_LOSS_PCT*100}%  |  Take Profit: {TAKE_PROFIT_PCT*100}%")
+    print(f"  Period: Last {LOOKBACK_DAYS} days")
     print("=" * 60)
 
-    all_results = []
+    if optimize_flag:
+        print(f"Running parameter search for targets "
+              f"return>={TARGET_RETURN_PCT}% win_rate>={TARGET_WIN_RATE}% ...")
+        best = optimize()
+        if not best:
+            print("No parameter set hit the targets. Try widening the grid or timeframe.")
+            return
+        params = best["params"]
+        print("\nBest parameters found:")
+        for k, v in params.items():
+            print(f"  {k}: {v}")
+        print(f"Average return: {best['avg_return_pct']}%")
+        print(f"Average win rate: {best['avg_win_rate']}%")
+        return
 
-    for symbol in SYMBOLS:
-        print(f"\nFetching data for {symbol}...")
-        bars = fetch_crypto_bars(symbol, LOOKBACK_DAYS)
-        if len(bars) < 50:
-            print(f"  Not enough data for {symbol}, skipping.")
-            continue
+    params = {
+        "timeframe": TIMEFRAME,
+        "fast_ema": FAST_EMA,
+        "slow_ema": SLOW_EMA,
+        "rsi_period": RSI_PERIOD,
+        "stop_loss_pct": STOP_LOSS_PCT,
+        "take_profit_pct": TAKE_PROFIT_PCT,
+        "position_size": POSITION_SIZE,
+        "cooldown_bars": COOLDOWN_BARS,
+    }
 
-        result = backtest_symbol(symbol, bars)
-        all_results.append(result)
+    summary = run_params_backtest(params)
+    all_results = summary["results"]
 
+    for result in all_results:
         print(f"\n{'─' * 40}")
         print(f"  {result['symbol']}")
         print(f"{'─' * 40}")
@@ -344,7 +464,6 @@ def main() -> None:
         print(f"  Total return:    {result['total_return_pct']}%")
         print(f"  Final equity:    ${result['final_equity']:,.2f}")
 
-        # Show last 5 trades
         if result["trades"]:
             print(f"\n  Last 5 trades:")
             for t in result["trades"][-5:]:
@@ -355,12 +474,9 @@ def main() -> None:
         print(f"\n{'=' * 60}")
         print("  OVERALL SUMMARY")
         print(f"{'=' * 60}")
-        total_trades = sum(r["total_trades"] for r in all_results)
-        avg_return   = sum(r["total_return_pct"] for r in all_results) / len(all_results)
-        avg_win_rate = sum(r["win_rate"] for r in all_results) / len(all_results)
-        print(f"  Total trades across all symbols: {total_trades}")
-        print(f"  Average win rate:                {round(avg_win_rate, 1)}%")
-        print(f"  Average return:                  {round(avg_return, 2)}%")
+        print(f"  Total trades across all symbols: {summary['total_trades']}")
+        print(f"  Average win rate:                {summary['avg_win_rate']}%")
+        print(f"  Average return:                  {summary['avg_return_pct']}%")
         print(f"{'=' * 60}\n")
 
 

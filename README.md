@@ -69,6 +69,14 @@ It will execute every `POLL_INTERVAL_SECONDS`.
 4. Call `/run-once` and inspect generated orders in response.
 5. Switch to `DRY_RUN=false` only after validating behavior.
 
+## Backtest and parameter search
+
+```bash
+python backtest.py                  # run with current settings
+python backtest.py --optimize       # grid-search params; needs Alpaca data keys
+```
+Targets in the optimizer: average return ≥0.5% and win rate ≥55%. Update `.env` with the suggested parameters after it finds a set that meets the targets.
+
 ## Deploy to Railway (always-on)
 
 1. Set these Railway variables: `ALPACA_API_KEY`, `ALPACA_API_SECRET`, `ALPACA_BASE_URL`, `ALPACA_DATA_URL`, plus any tunables (`SYMBOLS`, `POLL_INTERVAL_SECONDS`, `FAST_EMA`, `SLOW_EMA`, `RSI_PERIOD`, `STOP_LOSS_PCT`, `TAKE_PROFIT_PCT`, `COOLDOWN_MINUTES`, `DRY_RUN`).
