@@ -34,6 +34,9 @@ LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back 
 FAST_EMA       = 5
 SLOW_EMA       = 13
 RSI_PERIOD     = 7
+RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "75"))
+RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "30"))
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.20"))
 STOP_LOSS_PCT  = 0.008
 TAKE_PROFIT_PCT = 0.016
 STARTING_CASH  = 100_000.0
@@ -168,6 +171,9 @@ def get_signal(
     fast_ema: int,
     slow_ema: int,
     rsi_period: int,
+    rsi_overbought: int,
+    rsi_oversold: int,
+    min_confidence: float,
 ) -> str:
     bb_period = 20
     min_bars  = max(slow_ema + 2, rsi_period + 2, bb_period + 2)
@@ -197,22 +203,29 @@ def get_signal(
     above_upper_bb = last_price > upper_bb
     regime = detect_market_regime(closes)
 
+    confidence = min(1.0, abs((fast_now - slow_now) / slow_now) * 50 + abs(rsi - 50.0) / 60.0)
+    confidence = round(confidence, 3)
+    if confidence < min_confidence:
+        return "HOLD"
+
     if regime == "ranging":
-        if below_lower_bb and rsi <= 35 and rsi > 20:
+        if below_lower_bb and rsi <= rsi_oversold and rsi > 20:
             return "BUY"
-        elif above_upper_bb and rsi >= 65:
+        elif above_upper_bb and rsi >= rsi_overbought - 7:
             return "SELL"
-        elif last_price > middle_bb and rsi >= 70:
+        elif last_price > middle_bb and rsi >= rsi_overbought - 2:
             return "SELL"
 
     elif regime == "trending":
-        if bullish_cross and last_price > middle_bb and rsi < 70 and rsi > 30:
+        buy_band_low = max(45, rsi_oversold + 5)
+        buy_band_high = min(65, rsi_overbought - 5)
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high:
             return "BUY"
-        elif uptrend and below_lower_bb and rsi <= 40:
+        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 5:
             return "BUY"
-        elif bearish_cross and rsi < 50:
+        elif bearish_cross and rsi < rsi_overbought - 15:
             return "SELL"
-        elif above_upper_bb and rsi >= 75:
+        elif above_upper_bb and rsi >= rsi_overbought:
             return "SELL"
 
     return "HOLD"
@@ -294,7 +307,15 @@ def backtest_symbol(
             cooldown -= 1
             continue
 
-        signal = get_signal(window, fast_ema, slow_ema, rsi_period)
+        signal = get_signal(
+            window,
+            fast_ema,
+            slow_ema,
+            rsi_period,
+            RSI_OVERBOUGHT,
+            RSI_OVERSOLD,
+            MIN_CONFIDENCE,
+        )
 
         if signal == "BUY" and position == 0:
             budget = min(equity * position_size, cash * 0.95)
