@@ -36,13 +36,13 @@ SLOW_EMA       = 13
 RSI_PERIOD     = 7
 RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "75"))
 RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "30"))
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.20"))
-STOP_LOSS_PCT  = 0.008
-TAKE_PROFIT_PCT = 0.016
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.35"))
+STOP_LOSS_PCT  = 0.009
+TAKE_PROFIT_PCT = 0.020
 STARTING_CASH  = 100_000.0
 POSITION_SIZE  = 0.02                      # 2% of equity per trade
 MAX_POSITIONS  = 1
-COOLDOWN_BARS  = 4                         # bars to wait after a trade (5Min bars ≈ 20 minutes)
+COOLDOWN_BARS  = 6                         # bars to wait after a trade (5Min bars ≈ 30 minutes)
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
