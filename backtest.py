@@ -15,6 +15,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from itertools import product
 from typing import Any
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -26,9 +27,10 @@ API_KEY        = os.getenv("ALPACA_API_KEY", "")
 API_SECRET     = os.getenv("ALPACA_API_SECRET", "")
 DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 
-SYMBOLS        = ["BTC/USD", "ETH/USD", "SOL/USD"]   # symbols to backtest
-TIMEFRAME      = "15Min"
-LOOKBACK_DAYS  = 180                       # how far back to test (days)
+# Symbols can be overridden via env SYMBOLS="AAPL,MSFT" or BACKTEST_SYMBOLS
+SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "BTC/USD,ETH/USD,SOL/USD")).split(",") if s.strip()]
+TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "15Min")
+LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "180"))          # how far back to test (days)
 FAST_EMA       = 12
 SLOW_EMA       = 26
 RSI_PERIOD     = 14
@@ -42,6 +44,11 @@ COOLDOWN_BARS  = 10                        # bars to wait after a trade
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
 TARGET_WIN_RATE   = 55.0
+
+# Network / retry tuning
+REQUEST_TIMEOUT = 30
+MAX_RETRIES = 4
+BACKOFF_SECONDS = [2, 4, 8, 15]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,14 +69,32 @@ def fetch_crypto_bars(symbol: str, days: int, timeframe: str) -> list[dict[str, 
             "timeframe": timeframe,
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "limit": 10000,
+            "limit": 1000,
         }
         if next_page_token:
             params["page_token"] = next_page_token
 
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        if not response.ok:
-            print(f"  Error fetching {symbol}: {response.status_code} {response.text}")
+        response = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                break
+            except requests.exceptions.RequestException as exc:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                sleep_for = BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)]
+                print(f"  Retry {attempt+1}/{MAX_RETRIES} for {symbol} after error {exc}; sleeping {sleep_for}s")
+                time.sleep(sleep_for)
+
+        if not response or not response.ok:
+            status = response.status_code if response else "no_response"
+            text = response.text if response else ""
+            print(f"  Error fetching {symbol}: {status} {text}")
             break
 
         data = response.json()
@@ -337,7 +362,11 @@ def run_params_backtest(params: dict[str, Any]) -> dict[str, Any]:
     """
     all_results: list[dict[str, Any]] = []
     for symbol in SYMBOLS:
-        bars = fetch_crypto_bars(symbol, LOOKBACK_DAYS, params["timeframe"])
+        try:
+            bars = fetch_crypto_bars(symbol, LOOKBACK_DAYS, params["timeframe"])
+        except Exception as exc:  # noqa: BLE001 - skip symbol on fetch failure
+            print(f"  Skipping {symbol} due to fetch error: {exc}")
+            continue
         if len(bars) < 50:
             continue
         result = backtest_symbol(
@@ -377,13 +406,13 @@ def optimize() -> dict[str, Any]:
     """
     param_grid = {
         "timeframe": ["5Min", "15Min"],
-        "fast_ema": [5, 8, 12],
-        "slow_ema": [13, 21, 34],
-        "rsi_period": [7, 10, 14],
-        "stop_loss_pct": [0.0075, 0.01, 0.015],
-        "take_profit_pct": [0.012, 0.02, 0.03],
+        "fast_ema": [5, 8],
+        "slow_ema": [13, 21],
+        "rsi_period": [7, 10],
+        "stop_loss_pct": [0.0075, 0.01],
+        "take_profit_pct": [0.012, 0.02],
         "position_size": [0.01, 0.02],
-        "cooldown_bars": [3, 5, 8],
+        "cooldown_bars": [3, 5],
     }
 
     best: dict[str, Any] | None = None
