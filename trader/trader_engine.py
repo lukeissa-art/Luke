@@ -85,6 +85,9 @@ class TraderEngine:
             fast_period=self.settings.fast_ema,
             slow_period=self.settings.slow_ema,
             rsi_period=self.settings.rsi_period,
+            rsi_overbought=self.settings.rsi_overbought,
+            rsi_oversold=self.settings.rsi_oversold,
+            min_confidence=self.settings.min_confidence,
         )
 
     def run_once(

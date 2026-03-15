@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     fast_ema: int = Field(default=12, alias="FAST_EMA")
     slow_ema: int = Field(default=26, alias="SLOW_EMA")
     rsi_period: int = Field(default=14, alias="RSI_PERIOD")
+    rsi_overbought: int = Field(default=72, alias="RSI_OVERBOUGHT")
+    rsi_oversold: int = Field(default=35, alias="RSI_OVERSOLD")
+    min_confidence: float = Field(default=0.0, alias="MIN_CONFIDENCE")
 
     max_notional_per_position: float = Field(
         default=0.10,
@@ -51,4 +54,3 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-

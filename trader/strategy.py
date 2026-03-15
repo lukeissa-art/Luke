@@ -96,6 +96,9 @@ def generate_signal(
     fast_period: int,
     slow_period: int,
     rsi_period: int,
+    rsi_overbought: int,
+    rsi_oversold: int,
+    min_confidence: float,
 ) -> Signal:
     bb_period  = 20
     minimum    = max(slow_period + 2, rsi_period + 2, bb_period + 2)
@@ -139,16 +142,27 @@ def generate_signal(
 
     action = "HOLD"
     reason = "No clear signal — waiting for confirmation"
+    if confidence < min_confidence:
+        return Signal(
+            symbol=symbol.upper(),
+            action=action,
+            price=round(last_price, 4),
+            confidence=confidence,
+            reason="Below confidence threshold",
+            fast_ema=round(fast_now, 4),
+            slow_ema=round(slow_now, 4),
+            rsi=round(rsi_val, 2),
+        )
 
     # ── RANGING MARKET → Mean Reversion ──────────────────────────────────────
     if regime == "ranging":
-        if below_lower_bb and rsi_val <= 35 and rsi_val > 20:
+        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20:
             action = "BUY"
             reason = "Mean reversion — price at lower Bollinger Band, RSI oversold"
-        elif above_upper_bb and rsi_val >= 65:
+        elif above_upper_bb and rsi_val >= rsi_overbought - 7:
             action = "SELL"
             reason = "Mean reversion — price at upper Bollinger Band, RSI overbought"
-        elif last_price > middle_bb and rsi_val >= 70:
+        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2:
             action = "SELL"
             reason = "RSI extremely overbought in ranging market"
 
@@ -156,16 +170,19 @@ def generate_signal(
     elif regime == "trending":
         uptrend   = fast_now > slow_now
 
-        if bullish_cross and last_price > middle_bb and rsi_val < 70 and rsi_val > 30:
+        buy_band_low = max(45, rsi_oversold + 5)
+        buy_band_high = min(65, rsi_overbought - 5)
+
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high:
             action = "BUY"
             reason = "Breakout — bullish EMA crossover in trending market"
-        elif uptrend and below_lower_bb and rsi_val <= 40:
+        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 5:
             action = "BUY"
             reason = "Trend pullback — buying dip at lower Bollinger Band"
-        elif bearish_cross and rsi_val < 50:
+        elif bearish_cross and rsi_val < rsi_overbought - 15:
             action = "SELL"
             reason = "Breakout reversal — bearish EMA crossover"
-        elif above_upper_bb and rsi_val >= 75:
+        elif above_upper_bb and rsi_val >= rsi_overbought:
             action = "SELL"
             reason = "Overbought at upper band in trending market"
 
