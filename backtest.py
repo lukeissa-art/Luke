@@ -34,12 +34,12 @@ LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back 
 FAST_EMA       = 5
 SLOW_EMA       = 13
 RSI_PERIOD     = 7
-STOP_LOSS_PCT  = 0.0075
-TAKE_PROFIT_PCT = 0.012
+STOP_LOSS_PCT  = 0.008
+TAKE_PROFIT_PCT = 0.016
 STARTING_CASH  = 100_000.0
 POSITION_SIZE  = 0.02                      # 2% of equity per trade
 MAX_POSITIONS  = 3
-COOLDOWN_BARS  = 3                         # bars to wait after a trade
+COOLDOWN_BARS  = 4                         # bars to wait after a trade (5Min bars ≈ 20 minutes)
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
