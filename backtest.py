@@ -27,8 +27,8 @@ API_KEY        = os.getenv("ALPACA_API_KEY", "")
 API_SECRET     = os.getenv("ALPACA_API_SECRET", "")
 DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 
-# Symbols can be overridden via env SYMBOLS="AAPL,MSFT" or BACKTEST_SYMBOLS
-SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "BTC/USD,ETH/USD,SOL/USD")).split(",") if s.strip()]
+# Symbols can be overridden via env SYMBOLS="..." or BACKTEST_SYMBOLS; default SOL only
+SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "SOL/USD")).split(",") if s.strip()]
 TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "15Min")
 LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "120"))          # how far back to test (days)
 FAST_EMA       = 12
