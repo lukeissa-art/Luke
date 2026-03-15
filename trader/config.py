@@ -23,28 +23,28 @@ class Settings(BaseSettings):
         alias="ALPACA_DATA_URL",
     )
 
-    symbols: str = Field(default="AAPL,MSFT,NVDA,SPY,QQQ", alias="SYMBOLS")
+    symbols: str = Field(default="SOL/USD", alias="SYMBOLS")
     bar_timeframe: str = Field(default="5Min", alias="BAR_TIMEFRAME")
-    lookback_bars: int = Field(default=120, alias="LOOKBACK_BARS")
-    fast_ema: int = Field(default=12, alias="FAST_EMA")
-    slow_ema: int = Field(default=26, alias="SLOW_EMA")
-    rsi_period: int = Field(default=14, alias="RSI_PERIOD")
-    rsi_overbought: int = Field(default=72, alias="RSI_OVERBOUGHT")
-    rsi_oversold: int = Field(default=35, alias="RSI_OVERSOLD")
-    min_confidence: float = Field(default=0.0, alias="MIN_CONFIDENCE")
+    lookback_bars: int = Field(default=240, alias="LOOKBACK_BARS")
+    fast_ema: int = Field(default=5, alias="FAST_EMA")
+    slow_ema: int = Field(default=13, alias="SLOW_EMA")
+    rsi_period: int = Field(default=7, alias="RSI_PERIOD")
+    rsi_overbought: int = Field(default=75, alias="RSI_OVERBOUGHT")
+    rsi_oversold: int = Field(default=30, alias="RSI_OVERSOLD")
+    min_confidence: float = Field(default=0.20, alias="MIN_CONFIDENCE")
 
     max_notional_per_position: float = Field(
-        default=0.10,
+        default=0.02,
         alias="MAX_NOTIONAL_PER_POSITION",
     )
-    max_positions: int = Field(default=3, alias="MAX_POSITIONS")
-    stop_loss_pct: float = Field(default=0.02, alias="STOP_LOSS_PCT")
-    take_profit_pct: float = Field(default=0.04, alias="TAKE_PROFIT_PCT")
-    cooldown_minutes: int = Field(default=30, alias="COOLDOWN_MINUTES")
+    max_positions: int = Field(default=2, alias="MAX_POSITIONS")
+    stop_loss_pct: float = Field(default=0.008, alias="STOP_LOSS_PCT")
+    take_profit_pct: float = Field(default=0.016, alias="TAKE_PROFIT_PCT")
+    cooldown_minutes: int = Field(default=20, alias="COOLDOWN_MINUTES")
 
     dry_run: bool = Field(default=True, alias="DRY_RUN")
     order_time_in_force: str = Field(default="day", alias="ORDER_TIME_IN_FORCE")
-    poll_interval_seconds: int = Field(default=300, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=120, alias="POLL_INTERVAL_SECONDS")
 
     @property
     def symbols_list(self) -> list[str]:
