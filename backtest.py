@@ -11,6 +11,7 @@ Make sure your .env file is set up with your Alpaca API keys.
 from __future__ import annotations
 
 import os
+import random
 import sys
 from datetime import datetime, timedelta, timezone
 from itertools import product
@@ -30,7 +31,10 @@ DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 # Symbols can be overridden via env SYMBOLS="..." or BACKTEST_SYMBOLS; default SOL only
 SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "SOL/USD")).split(",") if s.strip()]
 TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "5Min")
-LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "240"))          # how far back to test (days)
+LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "240"))          # used when RANDOM_WINDOW is false
+WINDOW_DAYS    = int(os.getenv("WINDOW_DAYS", "120"))            # random window length
+WINDOW_YEARS   = int(os.getenv("WINDOW_YEARS", "3"))             # pick start within last N years
+RANDOM_WINDOW  = os.getenv("RANDOM_WINDOW", "true").lower() in {"1","true","yes","on"}
 FAST_EMA       = 8
 SLOW_EMA       = 13
 RSI_PERIOD     = 10
@@ -59,8 +63,23 @@ MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "120"))
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def fetch_crypto_bars(symbol: str, days: int, timeframe: str) -> list[dict[str, Any]]:
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=days)
+    now = datetime.now(timezone.utc)
+    if RANDOM_WINDOW:
+        max_start = now - timedelta(days=WINDOW_DAYS)
+        min_start = now - timedelta(days=WINDOW_YEARS * 365)
+        if max_start <= min_start:
+            start = min_start
+        else:
+            span_seconds = (max_start - min_start).total_seconds()
+            start = min_start + timedelta(seconds=random.random() * span_seconds)
+        end = start + timedelta(days=WINDOW_DAYS)
+        if end > now:
+            end = now
+            start = end - timedelta(days=WINDOW_DAYS)
+        print(f"[window] {symbol} {start.isoformat()} -> {end.isoformat()}")
+    else:
+        end = now
+        start = end - timedelta(days=days)
     headers = {
         "APCA-API-KEY-ID": API_KEY,
         "APCA-API-SECRET-KEY": API_SECRET,
