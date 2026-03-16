@@ -40,7 +40,7 @@ MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.35"))
 STOP_LOSS_PCT  = 0.15
 TAKE_PROFIT_PCT = 0.50
 STARTING_CASH  = 100_000.0
-POSITION_SIZE  = 0.20                      # 20% of equity per trade
+POSITION_SIZE  = 0.10                      # 10% of equity per trade
 MAX_POSITIONS  = 3
 COOLDOWN_BARS  = 5                         # bars to wait after a trade
 
