@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     min_confidence: float = Field(default=0.35, alias="MIN_CONFIDENCE")
 
     max_notional_per_position: float = Field(
-        default=0.10,
+        default=0.20,
         alias="MAX_NOTIONAL_PER_POSITION",
     )
     max_positions: int = Field(default=3, alias="MAX_POSITIONS")
