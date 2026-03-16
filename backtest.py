@@ -32,8 +32,8 @@ DATA_URL       = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets")
 SYMBOLS        = [s.strip() for s in os.getenv("BACKTEST_SYMBOLS", os.getenv("SYMBOLS", "SOL/USD")).split(",") if s.strip()]
 TIMEFRAME      = os.getenv("BAR_TIMEFRAME", "5Min")
 LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "240"))          # used when RANDOM_WINDOW is false
-WINDOW_DAYS    = int(os.getenv("WINDOW_DAYS", "120"))            # random window length
-WINDOW_YEARS   = int(os.getenv("WINDOW_YEARS", "3"))             # pick start within last N years
+WINDOW_DAYS    = int(os.getenv("WINDOW_DAYS", "90"))             # random window length
+WINDOW_YEARS   = int(os.getenv("WINDOW_YEARS", "2"))             # pick start within last N years
 RANDOM_WINDOW  = os.getenv("RANDOM_WINDOW", "true").lower() in {"1","true","yes","on"}
 FAST_EMA       = 8
 SLOW_EMA       = 13
@@ -58,7 +58,7 @@ MAX_RETRIES = 4
 BACKOFF_SECONDS = [2, 4, 8, 15]
 
 # Optimizer limits
-MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "120"))
+MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "60"))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
