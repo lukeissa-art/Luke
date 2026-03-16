@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     )
     max_positions: int = Field(default=3, alias="MAX_POSITIONS")
     stop_loss_pct: float = Field(default=0.015, alias="STOP_LOSS_PCT")
-    take_profit_pct: float = Field(default=0.05, alias="TAKE_PROFIT_PCT")
+    take_profit_pct: float = Field(default=0.03, alias="TAKE_PROFIT_PCT")
     cooldown_minutes: int = Field(default=5, alias="COOLDOWN_MINUTES")
 
     dry_run: bool = Field(default=False, alias="DRY_RUN")
