@@ -25,10 +25,10 @@ class Settings(BaseSettings):
 
     symbols: str = Field(default="SOL/USD", alias="SYMBOLS")
     bar_timeframe: str = Field(default="5Min", alias="BAR_TIMEFRAME")
-    lookback_bars: int = Field(default=240, alias="LOOKBACK_BARS")
-    fast_ema: int = Field(default=5, alias="FAST_EMA")
-    slow_ema: int = Field(default=13, alias="SLOW_EMA")
-    rsi_period: int = Field(default=7, alias="RSI_PERIOD")
+    lookback_bars: int = Field(default=300, alias="LOOKBACK_BARS")
+    fast_ema: int = Field(default=12, alias="FAST_EMA")
+    slow_ema: int = Field(default=26, alias="SLOW_EMA")
+    rsi_period: int = Field(default=14, alias="RSI_PERIOD")
     rsi_overbought: int = Field(default=75, alias="RSI_OVERBOUGHT")
     rsi_oversold: int = Field(default=30, alias="RSI_OVERSOLD")
     min_confidence: float = Field(default=0.35, alias="MIN_CONFIDENCE")
@@ -37,14 +37,14 @@ class Settings(BaseSettings):
         default=0.10,
         alias="MAX_NOTIONAL_PER_POSITION",
     )
-    max_positions: int = Field(default=1, alias="MAX_POSITIONS")
-    stop_loss_pct: float = Field(default=0.009, alias="STOP_LOSS_PCT")
-    take_profit_pct: float = Field(default=0.020, alias="TAKE_PROFIT_PCT")
-    cooldown_minutes: int = Field(default=30, alias="COOLDOWN_MINUTES")
+    max_positions: int = Field(default=3, alias="MAX_POSITIONS")
+    stop_loss_pct: float = Field(default=0.015, alias="STOP_LOSS_PCT")
+    take_profit_pct: float = Field(default=0.05, alias="TAKE_PROFIT_PCT")
+    cooldown_minutes: int = Field(default=5, alias="COOLDOWN_MINUTES")
 
     dry_run: bool = Field(default=False, alias="DRY_RUN")
     order_time_in_force: str = Field(default="day", alias="ORDER_TIME_IN_FORCE")
-    poll_interval_seconds: int = Field(default=180, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=60, alias="POLL_INTERVAL_SECONDS")
 
     @property
     def symbols_list(self) -> list[str]:
