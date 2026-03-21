@@ -93,12 +93,18 @@ def detect_market_regime(closes: list[float], period: int = 50) -> str:
 def generate_signal(
     symbol: str,
     closes: list[float],
+    opens: list[float],
+    volumes: list[float],
     fast_period: int,
     slow_period: int,
     rsi_period: int,
     rsi_overbought: int,
     rsi_oversold: int,
     min_confidence: float,
+    volume_lookback: int,
+    volume_spike_multiplier: float,
+    gap_threshold: float,
+    min_body_pct: float,
 ) -> Signal:
     bb_period  = 20
     minimum    = max(slow_period + 2, rsi_period + 2, bb_period + 2)
@@ -109,6 +115,7 @@ def generate_signal(
         )
 
     last_price = closes[-1]
+    prev_price = closes[-2]
 
     # Core indicators
     fast_s = ema_series(closes, fast_period)
@@ -154,17 +161,26 @@ def generate_signal(
             rsi=round(rsi_val, 2),
         )
 
+    # Volume/price action filter (proxy for institutional participation)
+    vol_window = volumes[-volume_lookback:] if volumes else []
+    avg_vol = sum(vol_window) / len(vol_window) if vol_window else 0
+    last_vol = volumes[-1] if volumes else 0
+    vol_spike = avg_vol > 0 and last_vol >= avg_vol * volume_spike_multiplier
+    body_pct = abs(last_price - opens[-1]) / opens[-1] if opens else 0
+    strong_up_candle = (last_price - prev_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
+    strong_down_candle = (prev_price - last_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
+
     # ── RANGING MARKET → Mean Reversion ──────────────────────────────────────
     if regime == "ranging":
-        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20:
+        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20 and vol_spike and strong_up_candle:
             action = "BUY"
-            reason = "Mean reversion — price at lower Bollinger Band, RSI oversold"
-        elif above_upper_bb and rsi_val >= rsi_overbought - 7:
+            reason = "Vol spike mean reversion — lower band + oversold + strong up candle"
+        elif above_upper_bb and rsi_val >= rsi_overbought - 7 and vol_spike and strong_down_candle:
             action = "SELL"
-            reason = "Mean reversion — price at upper Bollinger Band, RSI overbought"
-        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2:
+            reason = "Vol spike fade — upper band + overbought + strong down candle"
+        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2 and vol_spike:
             action = "SELL"
-            reason = "RSI extremely overbought in ranging market"
+            reason = "Overbought with volume spike"
 
     # ── TRENDING MARKET → Breakout / Momentum ────────────────────────────────
     elif regime == "trending":
@@ -173,18 +189,18 @@ def generate_signal(
         buy_band_low = max(45, rsi_oversold + 5)
         buy_band_high = min(65, rsi_overbought - 5)
 
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high:
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high and vol_spike and strong_up_candle:
             action = "BUY"
-            reason = "Breakout — bullish EMA crossover in trending market"
-        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 5:
+            reason = "Institutional momentum — bullish cross + volume spike"
+        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 5 and vol_spike and strong_up_candle:
             action = "BUY"
-            reason = "Trend pullback — buying dip at lower Bollinger Band"
-        elif bearish_cross and rsi_val < rsi_overbought - 15:
+            reason = "Institutional pullback buy — volume spike on dip"
+        elif bearish_cross and rsi_val < rsi_overbought - 15 and vol_spike and strong_down_candle:
             action = "SELL"
-            reason = "Breakout reversal — bearish EMA crossover"
-        elif above_upper_bb and rsi_val >= rsi_overbought:
+            reason = "Institutional sell pressure — bearish cross + volume spike"
+        elif above_upper_bb and rsi_val >= rsi_overbought and vol_spike:
             action = "SELL"
-            reason = "Overbought at upper band in trending market"
+            reason = "Volume spike at overbought"
 
     return Signal(
         symbol=symbol.upper(),

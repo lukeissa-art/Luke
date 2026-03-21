@@ -79,15 +79,23 @@ class TraderEngine:
             limit=self.settings.lookback_bars,
         )
         closes = [float(bar["c"]) for bar in bars if "c" in bar]
+        opens = [float(bar["o"]) for bar in bars if "o" in bar]
+        volumes = [float(bar.get("v", 0)) for bar in bars]
         return generate_signal(
             symbol=symbol,
             closes=closes,
+            opens=opens,
+            volumes=volumes,
             fast_period=self.settings.fast_ema,
             slow_period=self.settings.slow_ema,
             rsi_period=self.settings.rsi_period,
             rsi_overbought=self.settings.rsi_overbought,
             rsi_oversold=self.settings.rsi_oversold,
             min_confidence=self.settings.min_confidence,
+            volume_lookback=self.settings.volume_lookback,
+            volume_spike_multiplier=self.settings.volume_spike_multiplier,
+            gap_threshold=self.settings.gap_threshold,
+            min_body_pct=self.settings.min_body_pct,
         )
 
     def run_once(

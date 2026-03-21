@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     rsi_overbought: int = Field(default=75, alias="RSI_OVERBOUGHT")
     rsi_oversold: int = Field(default=30, alias="RSI_OVERSOLD")
     min_confidence: float = Field(default=0.35, alias="MIN_CONFIDENCE")
+    volume_lookback: int = Field(default=30, alias="VOLUME_LOOKBACK")
+    volume_spike_multiplier: float = Field(default=2.5, alias="VOLUME_SPIKE_MULTIPLIER")
+    gap_threshold: float = Field(default=0.002, alias="GAP_THRESHOLD")
+    min_body_pct: float = Field(default=0.003, alias="MIN_BODY_PCT")
 
     max_notional_per_position: float = Field(
         default=0.20,
@@ -40,7 +44,7 @@ class Settings(BaseSettings):
     max_positions: int = Field(default=3, alias="MAX_POSITIONS")
     stop_loss_pct: float = Field(default=0.0075, alias="STOP_LOSS_PCT")
     take_profit_pct: float = Field(default=0.012, alias="TAKE_PROFIT_PCT")
-    cooldown_minutes: int = Field(default=25, alias="COOLDOWN_MINUTES")
+    cooldown_minutes: int = Field(default=5, alias="COOLDOWN_MINUTES")
 
     dry_run: bool = Field(default=False, alias="DRY_RUN")
     order_time_in_force: str = Field(default="day", alias="ORDER_TIME_IN_FORCE")

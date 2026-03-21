@@ -41,6 +41,10 @@ RSI_PERIOD     = 10
 RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "75"))
 RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "30"))
 MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.35"))
+VOLUME_LOOKBACK = int(os.getenv("VOLUME_LOOKBACK", "30"))
+VOLUME_SPIKE_MULTIPLIER = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "2.5"))
+GAP_THRESHOLD = float(os.getenv("GAP_THRESHOLD", "0.002"))
+MIN_BODY_PCT = float(os.getenv("MIN_BODY_PCT", "0.003"))
 STOP_LOSS_PCT  = 0.0075
 TAKE_PROFIT_PCT = 0.012
 STARTING_CASH  = 100_000.0
@@ -187,12 +191,18 @@ def detect_market_regime(closes: list[float], period: int = 50) -> str:
 
 def get_signal(
     closes: list[float],
+    opens: list[float],
+    volumes: list[float],
     fast_ema: int,
     slow_ema: int,
     rsi_period: int,
     rsi_overbought: int,
     rsi_oversold: int,
     min_confidence: float,
+    volume_lookback: int,
+    volume_spike_multiplier: float,
+    gap_threshold: float,
+    min_body_pct: float,
 ) -> str:
     bb_period = 20
     min_bars  = max(slow_ema + 2, rsi_period + 2, bb_period + 2)
@@ -227,24 +237,32 @@ def get_signal(
     if confidence < min_confidence:
         return "HOLD"
 
+    vol_window = volumes[-volume_lookback:] if volumes else []
+    avg_vol = sum(vol_window) / len(vol_window) if vol_window else 0
+    last_vol = volumes[-1] if volumes else 0
+    vol_spike = avg_vol > 0 and last_vol >= avg_vol * volume_spike_multiplier
+    body_pct = abs(closes[-1] - opens[-1]) / opens[-1] if opens else 0
+    strong_up_candle = (closes[-1] - closes[-2]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
+    strong_down_candle = (closes[-2] - closes[-1]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
+
     if regime == "ranging":
-        if below_lower_bb and rsi <= rsi_oversold and rsi > 20:
+        if below_lower_bb and rsi <= rsi_oversold and rsi > 20 and vol_spike and strong_up_candle:
             return "BUY"
-        elif above_upper_bb and rsi >= rsi_overbought - 7:
+        elif above_upper_bb and rsi >= rsi_overbought - 7 and vol_spike and strong_down_candle:
             return "SELL"
-        elif last_price > middle_bb and rsi >= rsi_overbought - 2:
+        elif last_price > middle_bb and rsi >= rsi_overbought - 2 and vol_spike:
             return "SELL"
 
     elif regime == "trending":
         buy_band_low = max(45, rsi_oversold + 5)
         buy_band_high = min(65, rsi_overbought - 5)
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high:
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high and vol_spike and strong_up_candle:
             return "BUY"
-        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 5:
+        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 5 and vol_spike and strong_up_candle:
             return "BUY"
-        elif bearish_cross and rsi < rsi_overbought - 15:
+        elif bearish_cross and rsi < rsi_overbought - 15 and vol_spike and strong_down_candle:
             return "SELL"
-        elif above_upper_bb and rsi >= rsi_overbought:
+        elif above_upper_bb and rsi >= rsi_overbought and vol_spike:
             return "SELL"
 
     return "HOLD"
@@ -265,6 +283,8 @@ def backtest_symbol(
     cooldown_bars: int,
 ) -> dict:
     closes = [float(b["c"]) for b in bars]
+    opens  = [float(b["o"]) for b in bars]
+    volumes = [float(b.get("v", 0)) for b in bars]
     times  = [b["t"] for b in bars]
 
     cash       = STARTING_CASH
@@ -326,14 +346,22 @@ def backtest_symbol(
             cooldown -= 1
             continue
 
+        opens_window = opens[:i+1]
+        vols_window = volumes[:i+1]
         signal = get_signal(
             window,
+            opens_window,
+            vols_window,
             fast_ema,
             slow_ema,
             rsi_period,
             RSI_OVERBOUGHT,
             RSI_OVERSOLD,
             MIN_CONFIDENCE,
+            volume_lookback=VOLUME_LOOKBACK,
+            volume_spike_multiplier=VOLUME_SPIKE_MULTIPLIER,
+            gap_threshold=GAP_THRESHOLD,
+            min_body_pct=MIN_BODY_PCT,
         )
 
         if signal == "BUY" and position == 0:
@@ -454,7 +482,7 @@ def optimize() -> dict[str, Any]:
         "rsi_period": [7, 10],
         "stop_loss_pct": [0.0075, 0.01],
         "take_profit_pct": [0.012, 0.018],
-        "position_size": [0.01],
+        "position_size": [0.10, 0.20],
         "cooldown_bars": [3, 5],
     }
 
@@ -490,7 +518,10 @@ def main() -> None:
 
     print("=" * 60)
     print("  BACKTEST RESULTS")
-    print(f"  Period: Last {LOOKBACK_DAYS} days")
+    if RANDOM_WINDOW:
+        print(f"  Period: Random {WINDOW_DAYS}-day window within last {WINDOW_YEARS} years")
+    else:
+        print(f"  Period: Last {LOOKBACK_DAYS} days")
     print("=" * 60)
 
     if optimize_flag:
