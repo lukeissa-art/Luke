@@ -40,11 +40,12 @@ SLOW_EMA       = 13
 RSI_PERIOD     = 10
 RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "75"))
 RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "30"))
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.35"))
-VOLUME_LOOKBACK = int(os.getenv("VOLUME_LOOKBACK", "30"))
-VOLUME_SPIKE_MULTIPLIER = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "2.5"))
-GAP_THRESHOLD = float(os.getenv("GAP_THRESHOLD", "0.002"))
-MIN_BODY_PCT = float(os.getenv("MIN_BODY_PCT", "0.003"))
+# Looser defaults in backtest to ensure trades occur; can be tightened via env.
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.20"))
+VOLUME_LOOKBACK = int(os.getenv("VOLUME_LOOKBACK", "20"))
+VOLUME_SPIKE_MULTIPLIER = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "1.8"))
+GAP_THRESHOLD = float(os.getenv("GAP_THRESHOLD", "0.0015"))
+MIN_BODY_PCT = float(os.getenv("MIN_BODY_PCT", "0.002"))
 STOP_LOSS_PCT  = 0.0075
 TAKE_PROFIT_PCT = 0.012
 STARTING_CASH  = 100_000.0
