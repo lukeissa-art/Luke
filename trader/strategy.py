@@ -169,38 +169,40 @@ def generate_signal(
     body_pct = abs(last_price - opens[-1]) / opens[-1] if opens else 0
     strong_up_candle = (last_price - prev_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
     strong_down_candle = (prev_price - last_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
+    vol_trigger_buy = vol_spike or strong_up_candle
+    vol_trigger_sell = vol_spike or strong_down_candle
 
     # ── RANGING MARKET → Mean Reversion ──────────────────────────────────────
     if regime == "ranging":
-        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20 and vol_spike and strong_up_candle:
+        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20 and vol_trigger_buy:
             action = "BUY"
-            reason = "Vol spike mean reversion — lower band + oversold + strong up candle"
-        elif above_upper_bb and rsi_val >= rsi_overbought - 7 and vol_spike and strong_down_candle:
+            reason = "Mean reversion with flow — lower band + oversold + volume/impulse"
+        elif above_upper_bb and rsi_val >= rsi_overbought - 7 and vol_trigger_sell:
             action = "SELL"
-            reason = "Vol spike fade — upper band + overbought + strong down candle"
-        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2 and vol_spike:
+            reason = "Fade with flow — upper band + overbought + volume/impulse"
+        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2 and vol_trigger_sell:
             action = "SELL"
-            reason = "Overbought with volume spike"
+            reason = "Overbought with flow confirmation"
 
     # ── TRENDING MARKET → Breakout / Momentum ────────────────────────────────
     elif regime == "trending":
         uptrend   = fast_now > slow_now
 
         buy_band_low = max(45, rsi_oversold + 5)
-        buy_band_high = min(65, rsi_overbought - 5)
+        buy_band_high = min(70, rsi_overbought - 2)
 
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high and vol_spike and strong_up_candle:
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high and vol_trigger_buy:
             action = "BUY"
-            reason = "Institutional momentum — bullish cross + volume spike"
-        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 5 and vol_spike and strong_up_candle:
+            reason = "Momentum with flow — bullish cross + volume/impulse"
+        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 7 and vol_trigger_buy:
             action = "BUY"
-            reason = "Institutional pullback buy — volume spike on dip"
-        elif bearish_cross and rsi_val < rsi_overbought - 15 and vol_spike and strong_down_candle:
+            reason = "Pullback buy — dip with flow"
+        elif bearish_cross and rsi_val < rsi_overbought - 15 and vol_trigger_sell:
             action = "SELL"
-            reason = "Institutional sell pressure — bearish cross + volume spike"
-        elif above_upper_bb and rsi_val >= rsi_overbought and vol_spike:
+            reason = "Momentum sell — bearish cross + flow"
+        elif above_upper_bb and rsi_val >= rsi_overbought and vol_trigger_sell:
             action = "SELL"
-            reason = "Volume spike at overbought"
+            reason = "Exhaustion with flow confirmation"
 
     return Signal(
         symbol=symbol.upper(),

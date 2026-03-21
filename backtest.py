@@ -41,17 +41,17 @@ RSI_PERIOD     = 10
 RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT", "75"))
 RSI_OVERSOLD   = int(os.getenv("RSI_OVERSOLD", "30"))
 # Looser defaults in backtest to ensure trades occur; can be tightened via env.
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.20"))
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.15"))
 VOLUME_LOOKBACK = int(os.getenv("VOLUME_LOOKBACK", "20"))
-VOLUME_SPIKE_MULTIPLIER = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "1.8"))
-GAP_THRESHOLD = float(os.getenv("GAP_THRESHOLD", "0.0015"))
-MIN_BODY_PCT = float(os.getenv("MIN_BODY_PCT", "0.002"))
+VOLUME_SPIKE_MULTIPLIER = float(os.getenv("VOLUME_SPIKE_MULTIPLIER", "1.5"))
+GAP_THRESHOLD = float(os.getenv("GAP_THRESHOLD", "0.001"))
+MIN_BODY_PCT = float(os.getenv("MIN_BODY_PCT", "0.0015"))
 STOP_LOSS_PCT  = 0.0075
 TAKE_PROFIT_PCT = 0.012
 STARTING_CASH  = 100_000.0
 POSITION_SIZE  = 0.20                      # 20% of equity per trade
 MAX_POSITIONS  = 3
-COOLDOWN_BARS  = 5                         # bars to wait after a trade
+COOLDOWN_BARS  = 3                         # bars to wait after a trade
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
@@ -245,25 +245,27 @@ def get_signal(
     body_pct = abs(closes[-1] - opens[-1]) / opens[-1] if opens else 0
     strong_up_candle = (closes[-1] - closes[-2]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
     strong_down_candle = (closes[-2] - closes[-1]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
+    vol_trigger_buy = vol_spike or strong_up_candle
+    vol_trigger_sell = vol_spike or strong_down_candle
 
     if regime == "ranging":
-        if below_lower_bb and rsi <= rsi_oversold and rsi > 20 and vol_spike and strong_up_candle:
+        if below_lower_bb and rsi <= rsi_oversold and rsi > 20 and vol_trigger_buy:
             return "BUY"
-        elif above_upper_bb and rsi >= rsi_overbought - 7 and vol_spike and strong_down_candle:
+        elif above_upper_bb and rsi >= rsi_overbought - 7 and vol_trigger_sell:
             return "SELL"
-        elif last_price > middle_bb and rsi >= rsi_overbought - 2 and vol_spike:
+        elif last_price > middle_bb and rsi >= rsi_overbought - 2 and vol_trigger_sell:
             return "SELL"
 
     elif regime == "trending":
         buy_band_low = max(45, rsi_oversold + 5)
-        buy_band_high = min(65, rsi_overbought - 5)
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high and vol_spike and strong_up_candle:
+        buy_band_high = min(70, rsi_overbought - 2)
+        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high and vol_trigger_buy:
             return "BUY"
-        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 5 and vol_spike and strong_up_candle:
+        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 7 and vol_trigger_buy:
             return "BUY"
-        elif bearish_cross and rsi < rsi_overbought - 15 and vol_spike and strong_down_candle:
+        elif bearish_cross and rsi < rsi_overbought - 15 and vol_trigger_sell:
             return "SELL"
-        elif above_upper_bb and rsi >= rsi_overbought and vol_spike:
+        elif above_upper_bb and rsi >= rsi_overbought and vol_trigger_sell:
             return "SELL"
 
     return "HOLD"
