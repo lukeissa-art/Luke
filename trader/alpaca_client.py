@@ -95,13 +95,9 @@ class AlpacaClient:
     def get_asset(self, symbol: str) -> Optional[dict[str, Any]]:
         """Get asset info. Handles both stocks and crypto."""
         if is_crypto(symbol):
-            # Crypto assets use a different endpoint
-            return self._request(
-                "GET",
-                self.settings.alpaca_base_url,
-                f"/v2/assets/{symbol.upper()}",
-                allow_404=True,
-            )
+            # Alpaca's crypto assets aren't listed under the stocks asset API with slashes.
+            # We assume crypto symbols provided are tradable when data endpoints succeed.
+            return {"symbol": symbol.upper(), "tradable": True}
         return self._request(
             "GET",
             self.settings.alpaca_base_url,
