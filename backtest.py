@@ -259,30 +259,28 @@ def get_signal(
     last_vol = volumes[-1] if volumes else 0
     vol_spike = avg_vol > 0 and last_vol >= avg_vol * volume_spike_multiplier
     body_pct = abs(closes[-1] - opens[-1]) / opens[-1] if opens else 0
-    strong_up_candle = (closes[-1] - closes[-2]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
-    strong_down_candle = (closes[-2] - closes[-1]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
-    vol_trigger_buy = vol_spike or strong_up_candle
-    vol_trigger_sell = vol_spike or strong_down_candle
+    impulse_up = (closes[-1] - closes[-2]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
+    impulse_down = (closes[-2] - closes[-1]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
+    vol_ratio = (last_vol / avg_vol) if avg_vol > 0 else 1.0
 
-    if regime == "ranging":
-        if below_lower_bb and rsi <= rsi_oversold and rsi > 20 and vol_trigger_buy:
-            return "BUY"
-        elif above_upper_bb and rsi >= rsi_overbought - 7 and vol_trigger_sell:
-            return "SELL"
-        elif last_price > middle_bb and rsi >= rsi_overbought - 2 and vol_trigger_sell:
-            return "SELL"
+    # Momentum / trend following
+    if bullish_cross and rsi >= max(40, rsi_oversold + 5):
+        return "BUY"
+    if uptrend and last_price > slow_now and 50 <= rsi <= max(70, rsi_overbought - 2):
+        return "BUY"
+    if impulse_up and uptrend and rsi > 55:
+        return "BUY"
 
-    elif regime == "trending":
-        buy_band_low = max(45, rsi_oversold + 5)
-        buy_band_high = min(70, rsi_overbought - 2)
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi <= buy_band_high and vol_trigger_buy:
-            return "BUY"
-        elif uptrend and below_lower_bb and rsi <= rsi_oversold + 7 and vol_trigger_buy:
-            return "BUY"
-        elif bearish_cross and rsi < rsi_overbought - 15 and vol_trigger_sell:
-            return "SELL"
-        elif above_upper_bb and rsi >= rsi_overbought and vol_trigger_sell:
-            return "SELL"
+    if bearish_cross and rsi <= min(60, rsi_overbought):
+        return "SELL"
+    if downtrend and last_price < slow_now and rsi < 45:
+        return "SELL"
+    if impulse_down and rsi > rsi_overbought - 5:
+        return "SELL"
+    if rsi >= rsi_overbought + 2:
+        return "SELL"
+
+    # Slight confidence boost on volume is handled in live strategy; here we gate less.
 
     return "HOLD"
 

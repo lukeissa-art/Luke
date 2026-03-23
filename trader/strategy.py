@@ -161,48 +161,44 @@ def generate_signal(
             rsi=round(rsi_val, 2),
         )
 
-    # Volume/price action filter (proxy for institutional participation)
+    # Volume context (not a hard gate, just boosts confidence)
     vol_window = volumes[-volume_lookback:] if volumes else []
     avg_vol = sum(vol_window) / len(vol_window) if vol_window else 0
     last_vol = volumes[-1] if volumes else 0
-    vol_spike = avg_vol > 0 and last_vol >= avg_vol * volume_spike_multiplier
+    vol_ratio = (last_vol / avg_vol) if avg_vol > 0 else 1.0
     body_pct = abs(last_price - opens[-1]) / opens[-1] if opens else 0
-    strong_up_candle = (last_price - prev_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
-    strong_down_candle = (prev_price - last_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
-    vol_trigger_buy = vol_spike or strong_up_candle
-    vol_trigger_sell = vol_spike or strong_down_candle
+    impulse_up = (last_price - prev_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
+    impulse_down = (prev_price - last_price) / prev_price >= gap_threshold and body_pct >= min_body_pct
 
-    # ── RANGING MARKET → Mean Reversion ──────────────────────────────────────
-    if regime == "ranging":
-        if below_lower_bb and rsi_val <= rsi_oversold and rsi_val > 20 and vol_trigger_buy:
-            action = "BUY"
-            reason = "Mean reversion with flow — lower band + oversold + volume/impulse"
-        elif above_upper_bb and rsi_val >= rsi_overbought - 7 and vol_trigger_sell:
-            action = "SELL"
-            reason = "Fade with flow — upper band + overbought + volume/impulse"
-        elif last_price > middle_bb and rsi_val >= rsi_overbought - 2 and vol_trigger_sell:
-            action = "SELL"
-            reason = "Overbought with flow confirmation"
+    # ── Momentum / trend following ───────────────────────────────────────────
+    uptrend = fast_now > slow_now
+    downtrend = fast_now < slow_now
 
-    # ── TRENDING MARKET → Breakout / Momentum ────────────────────────────────
-    elif regime == "trending":
-        uptrend   = fast_now > slow_now
+    if bullish_cross and rsi_val >= max(40, rsi_oversold + 5):
+        action = "BUY"
+        reason = "Bullish EMA cross with momentum"
+    elif uptrend and last_price > slow_now and 50 <= rsi_val <= max(70, rsi_overbought - 5):
+        action = "BUY"
+        reason = "Uptrend continuation"
+    elif impulse_up and uptrend and rsi_val > 55:
+        action = "BUY"
+        reason = "Impulse in trend"
+    elif bearish_cross and rsi_val <= min(60, rsi_overbought):
+        action = "SELL"
+        reason = "Bearish EMA cross"
+    elif downtrend and last_price < slow_now and rsi_val < 45:
+        action = "SELL"
+        reason = "Downtrend continuation"
+    elif impulse_down and rsi_val > rsi_overbought - 5:
+        action = "SELL"
+        reason = "Impulse against longs"
+    elif rsi_val >= rsi_overbought + 2:
+        action = "SELL"
+        reason = "RSI overbought exit"
 
-        buy_band_low = max(45, rsi_oversold + 5)
-        buy_band_high = min(70, rsi_overbought - 2)
-
-        if bullish_cross and last_price > middle_bb and buy_band_low <= rsi_val <= buy_band_high and vol_trigger_buy:
-            action = "BUY"
-            reason = "Momentum with flow — bullish cross + volume/impulse"
-        elif uptrend and below_lower_bb and rsi_val <= rsi_oversold + 7 and vol_trigger_buy:
-            action = "BUY"
-            reason = "Pullback buy — dip with flow"
-        elif bearish_cross and rsi_val < rsi_overbought - 15 and vol_trigger_sell:
-            action = "SELL"
-            reason = "Momentum sell — bearish cross + flow"
-        elif above_upper_bb and rsi_val >= rsi_overbought and vol_trigger_sell:
-            action = "SELL"
-            reason = "Exhaustion with flow confirmation"
+    # Boost confidence modestly when volume is elevated
+    if vol_ratio > 1:
+        confidence = min(1.0, confidence + (min(vol_ratio, 3.0) - 1) * 0.1)
 
     return Signal(
         symbol=symbol.upper(),
