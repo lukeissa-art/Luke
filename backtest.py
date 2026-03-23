@@ -35,6 +35,10 @@ LOOKBACK_DAYS  = int(os.getenv("LOOKBACK_DAYS", "240"))          # used when RAN
 WINDOW_DAYS    = int(os.getenv("WINDOW_DAYS", "90"))             # random window length
 WINDOW_YEARS   = int(os.getenv("WINDOW_YEARS", "2"))             # pick start within last N years
 RANDOM_WINDOW  = os.getenv("RANDOM_WINDOW", "true").lower() in {"1","true","yes","on"}
+# Optimizer can use separate window settings; defaults mirror backtest
+OPT_WINDOW_DAYS  = int(os.getenv("OPT_WINDOW_DAYS", str(WINDOW_DAYS)))
+OPT_WINDOW_YEARS = int(os.getenv("OPT_WINDOW_YEARS", str(WINDOW_YEARS)))
+OPT_RANDOM_WINDOW = os.getenv("OPT_RANDOM_WINDOW", str(RANDOM_WINDOW)).lower() in {"1","true","yes","on"}
 FAST_EMA       = 8
 SLOW_EMA       = 13
 RSI_PERIOD     = 10
@@ -67,21 +71,33 @@ MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "60"))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def fetch_crypto_bars(symbol: str, days: int, timeframe: str) -> list[dict[str, Any]]:
+def fetch_crypto_bars(
+    symbol: str,
+    days: int,
+    timeframe: str,
+    *,
+    random_window: bool | None = None,
+    window_days: int | None = None,
+    window_years: int | None = None,
+) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc)
-    if RANDOM_WINDOW:
-        max_start = now - timedelta(days=WINDOW_DAYS)
-        min_start = now - timedelta(days=WINDOW_YEARS * 365)
+    use_random = RANDOM_WINDOW if random_window is None else random_window
+    win_days = WINDOW_DAYS if window_days is None else window_days
+    win_years = WINDOW_YEARS if window_years is None else window_years
+
+    if use_random:
+        max_start = now - timedelta(days=win_days)
+        min_start = now - timedelta(days=win_years * 365)
         if max_start <= min_start:
             start = min_start
         else:
             span_seconds = (max_start - min_start).total_seconds()
             start = min_start + timedelta(seconds=random.random() * span_seconds)
-        end = start + timedelta(days=WINDOW_DAYS)
+        end = start + timedelta(days=win_days)
         if end > now:
             end = now
-            start = end - timedelta(days=WINDOW_DAYS)
-        print(f"[window] {symbol} {start.isoformat()} -> {end.isoformat()}")
+            start = end - timedelta(days=win_days)
+        print(f"[window] {symbol} {start.isoformat()} -> {end.isoformat()} (random)")
     else:
         end = now
         start = end - timedelta(days=days)
@@ -430,14 +446,27 @@ def backtest_symbol(
     }
 
 
-def run_params_backtest(params: dict[str, Any]) -> dict[str, Any]:
+def run_params_backtest(
+    params: dict[str, Any],
+    *,
+    random_window: bool | None = None,
+    window_days: int | None = None,
+    window_years: int | None = None,
+) -> dict[str, Any]:
     """
     Execute backtest across all symbols for a parameter set.
     """
     all_results: list[dict[str, Any]] = []
     for symbol in SYMBOLS:
         try:
-            bars = fetch_crypto_bars(symbol, LOOKBACK_DAYS, params["timeframe"])
+            bars = fetch_crypto_bars(
+                symbol,
+                LOOKBACK_DAYS,
+                params["timeframe"],
+                random_window=random_window,
+                window_days=window_days,
+                window_years=window_years,
+            )
         except Exception as exc:  # noqa: BLE001 - skip symbol on fetch failure
             print(f"  Skipping {symbol} due to fetch error: {exc}")
             continue
@@ -474,7 +503,12 @@ def run_params_backtest(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def optimize() -> dict[str, Any]:
+def optimize(
+    *,
+    random_window: bool | None = None,
+    window_days: int | None = None,
+    window_years: int | None = None,
+) -> dict[str, Any]:
     """
     Grid search for parameters that hit target return and win rate.
     """
@@ -494,7 +528,12 @@ def optimize() -> dict[str, Any]:
     total = min(len(combos), MAX_COMBOS)
     for idx, combo in enumerate(combos[:total], 1):
         params = dict(zip(param_grid.keys(), combo))
-        summary = run_params_backtest(params)
+        summary = run_params_backtest(
+            params,
+            random_window=random_window,
+            window_days=window_days,
+            window_years=window_years,
+        )
         if (
             summary["avg_return_pct"] >= TARGET_RETURN_PCT
             and summary["avg_win_rate"] >= TARGET_WIN_RATE
@@ -530,7 +569,11 @@ def main() -> None:
     if optimize_flag:
         print(f"Running parameter search for targets "
               f"return>={TARGET_RETURN_PCT}% win_rate>={TARGET_WIN_RATE}% ...")
-        best = optimize()
+        best = optimize(
+            random_window=OPT_RANDOM_WINDOW,
+            window_days=OPT_WINDOW_DAYS,
+            window_years=OPT_WINDOW_YEARS,
+        )
         if not best:
             print("No parameter set hit the targets. Try widening the grid or timeframe.")
             return
