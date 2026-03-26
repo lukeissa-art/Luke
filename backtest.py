@@ -11,13 +11,16 @@ Make sure your .env file is set up with your Alpaca API keys.
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import os
 import random
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from itertools import product
+from pathlib import Path
 from typing import Any
-import time
 
 import requests
 from dotenv import load_dotenv
@@ -508,6 +511,34 @@ def optimize(
     return best or {}
 
 
+def write_outputs(summary: dict[str, Any], json_path: str | None, csv_path: str | None) -> None:
+    """Optionally write summary to JSON/CSV."""
+    if json_path:
+        out = Path(json_path)
+        out.write_text(json.dumps(summary, indent=2))
+
+    if csv_path:
+        out = Path(csv_path)
+        fieldnames = [
+            "symbol",
+            "total_trades",
+            "win_rate",
+            "avg_win_pct",
+            "avg_loss_pct",
+            "total_return_pct",
+            "final_equity",
+            "max_drawdown_pct",
+            "profit_factor",
+            "sharpe",
+            "cagr_pct",
+            "max_consec_losses",
+        ]
+        with out.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in summary.get("results", []):
+                writer.writerow({k: r.get(k, "") for k in fieldnames})
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -519,6 +550,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=str, help="set RNG seed for reproducibility")
     parser.add_argument("--slippage-bps", type=float, help="override slippage bps per side")
     parser.add_argument("--fee-pct", type=float, help="override fee percentage per side")
+    parser.add_argument("--json-out", type=str, help="write summary JSON to path")
+    parser.add_argument("--csv-out", type=str, help="write per-symbol CSV to path")
     return parser.parse_args()
 
 
@@ -568,6 +601,7 @@ def main() -> None:
             print(f"  {k}: {v}")
         print(f"Average return: {best['avg_return_pct']}%")
         print(f"Average win rate: {best['avg_win_rate']}%")
+        write_outputs(best, args.json_out, args.csv_out)
         return
 
     params = {
@@ -617,6 +651,8 @@ def main() -> None:
         print(f"  Average win rate:                {summary['avg_win_rate']}%")
         print(f"  Average return:                  {summary['avg_return_pct']}%")
         print(f"{'=' * 60}\n")
+
+    write_outputs(summary, args.json_out, args.csv_out)
 
 
 if __name__ == "__main__":
