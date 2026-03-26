@@ -61,6 +61,12 @@ COOLDOWN_BARS  = 3                         # bars to wait after a trade
 SLIPPAGE_BPS   = float(os.getenv("SLIPPAGE_BPS", "5"))   # 0.05% default
 FEE_PCT        = float(os.getenv("FEE_PCT", "0.0005"))   # 0.05% per side default
 
+if RANDOM_SEED is not None:
+    try:
+        random.seed(int(RANDOM_SEED))
+    except ValueError:
+        random.seed(RANDOM_SEED)
+
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
 TARGET_WIN_RATE   = 55.0
@@ -84,12 +90,6 @@ def fetch_crypto_bars(
     window_days: int | None = None,
     window_years: int | None = None,
     ) -> list[dict[str, Any]]:
-    if RANDOM_SEED is not None:
-        try:
-            random.seed(int(RANDOM_SEED))
-        except ValueError:
-            random.seed(RANDOM_SEED)
-
     now = datetime.now(timezone.utc)
     use_random = RANDOM_WINDOW if random_window is None else random_window
     win_days = WINDOW_DAYS if window_days is None else window_days
@@ -518,6 +518,7 @@ def main() -> None:
         print(f"  Period: Random {WINDOW_DAYS}-day window within last {WINDOW_YEARS} years")
     else:
         print(f"  Period: Last {LOOKBACK_DAYS} days")
+    print(f"  Assumptions: slippage {SLIPPAGE_BPS} bps, fee {FEE_PCT*100:.3f}% per side")
     print("=" * 60)
 
     if optimize_flag:
