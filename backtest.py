@@ -20,6 +20,7 @@ import time
 
 import requests
 from dotenv import load_dotenv
+from trader.strategy import generate_signal
 
 load_dotenv()
 
@@ -157,134 +158,6 @@ def fetch_crypto_bars(
     return all_bars
 
 
-def ema_series(values: list[float], period: int) -> list[float]:
-    if len(values) < period:
-        return []
-    multiplier = 2 / (period + 1)
-    result = []
-    current = sum(values[:period]) / period
-    result.append(current)
-    for value in values[period:]:
-        current = (value - current) * multiplier + current
-        result.append(current)
-    return result
-
-
-def rsi_value(values: list[float], period: int) -> float:
-    if len(values) <= period:
-        return 50.0
-    deltas = [values[i] - values[i - 1] for i in range(1, len(values))]
-    gains  = [max(d, 0.0) for d in deltas]
-    losses = [abs(min(d, 0.0)) for d in deltas]
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for i in range(period, len(deltas)):
-        avg_gain = ((avg_gain * (period - 1)) + gains[i]) / period
-        avg_loss = ((avg_loss * (period - 1)) + losses[i]) / period
-    if avg_loss == 0:
-        return 100.0
-    return 100 - (100 / (1 + avg_gain / avg_loss))
-
-
-def bollinger_bands(values: list[float], period: int, num_std: float = 2.0):
-    if len(values) < period:
-        return None, None, None
-    window = values[-period:]
-    middle = sum(window) / period
-    variance = sum((x - middle) ** 2 for x in window) / period
-    std = variance ** 0.5
-    return middle + num_std * std, middle, middle - num_std * std
-
-
-def detect_market_regime(closes: list[float], period: int = 50) -> str:
-    if len(closes) < period:
-        return "ranging"
-    window = closes[-period:]
-    high = max(window)
-    low  = min(window)
-    price_range = (high - low) / low if low > 0 else 0
-    return "trending" if price_range > 0.03 else "ranging"
-
-
-def get_signal(
-    closes: list[float],
-    opens: list[float],
-    volumes: list[float],
-    fast_ema: int,
-    slow_ema: int,
-    rsi_period: int,
-    rsi_overbought: int,
-    rsi_oversold: int,
-    min_confidence: float,
-    volume_lookback: int,
-    volume_spike_multiplier: float,
-    gap_threshold: float,
-    min_body_pct: float,
-) -> str:
-    bb_period = 20
-    min_bars  = max(slow_ema + 2, rsi_period + 2, bb_period + 2)
-    if len(closes) < min_bars:
-        return "HOLD"
-
-    fast_s = ema_series(closes, fast_ema)
-    slow_s = ema_series(closes, slow_ema)
-    offset = len(fast_s) - len(slow_s)
-    aligned = fast_s[offset:]
-
-    fast_now, fast_prev = aligned[-1], aligned[-2]
-    slow_now, slow_prev = slow_s[-1], slow_s[-2]
-
-    bullish_cross = fast_prev <= slow_prev and fast_now > slow_now
-    bearish_cross  = fast_prev >= slow_prev and fast_now < slow_now
-
-    rsi        = rsi_value(closes, rsi_period)
-    last_price = closes[-1]
-    uptrend    = fast_now > slow_now
-
-    upper_bb, middle_bb, lower_bb = bollinger_bands(closes, bb_period)
-    if upper_bb is None:
-        return "HOLD"
-
-    below_lower_bb = last_price < lower_bb
-    above_upper_bb = last_price > upper_bb
-    regime = detect_market_regime(closes)
-
-    confidence = min(1.0, abs((fast_now - slow_now) / slow_now) * 50 + abs(rsi - 50.0) / 60.0)
-    confidence = round(confidence, 3)
-    if confidence < min_confidence:
-        return "HOLD"
-
-    vol_window = volumes[-volume_lookback:] if volumes else []
-    avg_vol = sum(vol_window) / len(vol_window) if vol_window else 0
-    last_vol = volumes[-1] if volumes else 0
-    vol_spike = avg_vol > 0 and last_vol >= avg_vol * volume_spike_multiplier
-    body_pct = abs(closes[-1] - opens[-1]) / opens[-1] if opens else 0
-    impulse_up = (closes[-1] - closes[-2]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
-    impulse_down = (closes[-2] - closes[-1]) / closes[-2] >= gap_threshold and body_pct >= min_body_pct
-    vol_ratio = (last_vol / avg_vol) if avg_vol > 0 else 1.0
-
-    # Momentum / trend following
-    if bullish_cross and rsi >= max(40, rsi_oversold + 5):
-        return "BUY"
-    if uptrend and last_price > slow_now and 50 <= rsi <= max(70, rsi_overbought - 2):
-        return "BUY"
-    if impulse_up and uptrend and rsi > 55:
-        return "BUY"
-
-    if bearish_cross and rsi <= min(60, rsi_overbought):
-        return "SELL"
-    if downtrend and last_price < slow_now and rsi < 45:
-        return "SELL"
-    if impulse_down and rsi > rsi_overbought - 5:
-        return "SELL"
-    if rsi >= rsi_overbought + 2:
-        return "SELL"
-
-    # Slight confidence boost on volume is handled in live strategy; here we gate less.
-
-    return "HOLD"
-
-
 # ── Backtest engine ───────────────────────────────────────────────────────────
 
 def backtest_symbol(
@@ -365,21 +238,26 @@ def backtest_symbol(
 
         opens_window = opens[:i+1]
         vols_window = volumes[:i+1]
-        signal = get_signal(
-            window,
-            opens_window,
-            vols_window,
-            fast_ema,
-            slow_ema,
-            rsi_period,
-            RSI_OVERBOUGHT,
-            RSI_OVERSOLD,
-            MIN_CONFIDENCE,
-            volume_lookback=VOLUME_LOOKBACK,
-            volume_spike_multiplier=VOLUME_SPIKE_MULTIPLIER,
-            gap_threshold=GAP_THRESHOLD,
-            min_body_pct=MIN_BODY_PCT,
-        )
+        try:
+            signal_obj = generate_signal(
+                symbol=symbol,
+                closes=window,
+                opens=opens_window,
+                volumes=vols_window,
+                fast_period=fast_ema,
+                slow_period=slow_ema,
+                rsi_period=rsi_period,
+                rsi_overbought=RSI_OVERBOUGHT,
+                rsi_oversold=RSI_OVERSOLD,
+                min_confidence=MIN_CONFIDENCE,
+                volume_lookback=VOLUME_LOOKBACK,
+                volume_spike_multiplier=VOLUME_SPIKE_MULTIPLIER,
+                gap_threshold=GAP_THRESHOLD,
+                min_body_pct=MIN_BODY_PCT,
+            )
+            signal = signal_obj.action
+        except ValueError:
+            signal = "HOLD"
 
         if signal == "BUY" and position == 0:
             budget = min(equity * position_size, cash * 0.95)
@@ -450,6 +328,7 @@ def run_params_backtest(
     random_window: bool | None = None,
     window_days: int | None = None,
     window_years: int | None = None,
+    bars_cache: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """
     Execute backtest across all symbols for a parameter set.
@@ -457,14 +336,17 @@ def run_params_backtest(
     all_results: list[dict[str, Any]] = []
     for symbol in SYMBOLS:
         try:
-            bars = fetch_crypto_bars(
-                symbol,
-                LOOKBACK_DAYS,
-                params["timeframe"],
-                random_window=random_window,
-                window_days=window_days,
-                window_years=window_years,
-            )
+            if bars_cache and symbol in bars_cache:
+                bars = bars_cache[symbol]
+            else:
+                bars = fetch_crypto_bars(
+                    symbol,
+                    LOOKBACK_DAYS,
+                    params["timeframe"],
+                    random_window=random_window,
+                    window_days=window_days,
+                    window_years=window_years,
+                )
         except Exception as exc:  # noqa: BLE001 - skip symbol on fetch failure
             print(f"  Skipping {symbol} due to fetch error: {exc}")
             continue
@@ -521,6 +403,21 @@ def optimize(
         "cooldown_bars": [3, 5],
     }
 
+    # Fetch bars once per symbol to speed up search and ensure a consistent window
+    bars_cache: dict[str, list[dict[str, Any]]] = {}
+    for symbol in SYMBOLS:
+        try:
+            bars_cache[symbol] = fetch_crypto_bars(
+                symbol,
+                LOOKBACK_DAYS,
+                "5Min",
+                random_window=random_window,
+                window_days=window_days,
+                window_years=window_years,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"  Skipping {symbol} in optimizer due to fetch error: {exc}")
+
     best: dict[str, Any] | None = None
     combos = list(product(*param_grid.values()))
     total = min(len(combos), MAX_COMBOS)
@@ -531,6 +428,7 @@ def optimize(
             random_window=random_window,
             window_days=window_days,
             window_years=window_years,
+            bars_cache=bars_cache,
         )
         if (
             summary["avg_return_pct"] >= TARGET_RETURN_PCT
