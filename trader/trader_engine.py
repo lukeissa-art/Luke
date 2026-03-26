@@ -39,6 +39,23 @@ class TraderEngine:
             return 0.0
         return abs(float(raw_qty))
 
+    def _crypto_exit_signal(self, position: dict[str, Any], price: float) -> bool:
+        """
+        For crypto (no native bracket orders), decide whether to exit based on
+        configured stop-loss / take-profit thresholds.
+        """
+        if price <= 0:
+            return False
+        entry = float(position.get("avg_entry_price", 0) or 0)
+        if entry <= 0:
+            return False
+        pnl_pct = (price - entry) / entry
+        if self.settings.stop_loss_pct > 0 and pnl_pct <= -self.settings.stop_loss_pct:
+            return True
+        if self.settings.take_profit_pct > 0 and pnl_pct >= self.settings.take_profit_pct:
+            return True
+        return False
+
     def _compute_buy_qty(self, equity: float, cash: float, price: float, crypto: bool = False) -> float:
         if price <= 0:
             return 0.0
@@ -139,6 +156,47 @@ class TraderEngine:
             crypto = is_crypto(symbol)
 
             try:
+                # For crypto, enforce manual stop/TP since bracket orders aren't available
+                existing = positions.get(symbol)
+                if crypto and existing:
+                    try:
+                        current_price = self.client.get_latest_trade_price(symbol)
+                        if self._crypto_exit_signal(existing, current_price):
+                            sell_qty = self._position_qty(existing)
+                            if sell_qty > 0:
+                                order = {
+                                    "symbol": symbol,
+                                    "qty": self._format_qty(sell_qty, crypto=True),
+                                    "side": "sell",
+                                    "type": "market",
+                                    "time_in_force": "gtc",
+                                }
+                                response = (
+                                    {"dry_run": True, "order": order}
+                                    if self.settings.dry_run
+                                    else self.client.submit_order(order)
+                                )
+                                actions.append(
+                                    {
+                                        "symbol": symbol,
+                                        "decision": "SELL",
+                                        "reason": "crypto_stop_or_take_profit",
+                                        "order": response,
+                                    }
+                                )
+                                self._mark_traded(symbol)
+                                positions.pop(symbol, None)
+                                continue
+                    except Exception as exc:  # noqa: BLE001
+                        actions.append(
+                            {
+                                "symbol": symbol,
+                                "decision": "ERROR",
+                                "reason": f"price_check_failed: {exc}",
+                            }
+                        )
+                        continue
+
                 signal = self.get_signal(symbol)
             except Exception as exc:  # noqa: BLE001
                 actions.append(
