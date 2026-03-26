@@ -450,6 +450,7 @@ def optimize(
     random_window: bool | None = None,
     window_days: int | None = None,
     window_years: int | None = None,
+    max_combos: int | None = None,
 ) -> dict[str, Any]:
     """
     Grid search for parameters that hit target return and win rate.
@@ -482,7 +483,8 @@ def optimize(
 
     best: dict[str, Any] | None = None
     combos = list(product(*param_grid.values()))
-    total = min(len(combos), MAX_COMBOS)
+    total_limit = max_combos if max_combos is not None else MAX_COMBOS
+    total = min(len(combos), total_limit)
     for idx, combo in enumerate(combos[:total], 1):
         params = dict(zip(param_grid.keys(), combo))
         summary = run_params_backtest(
@@ -550,6 +552,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=str, help="set RNG seed for reproducibility")
     parser.add_argument("--slippage-bps", type=float, help="override slippage bps per side")
     parser.add_argument("--fee-pct", type=float, help="override fee percentage per side")
+    parser.add_argument("--symbols", type=str, help="comma-separated symbols to backtest/optimize")
+    parser.add_argument("--max-combos", type=int, help="limit optimizer combinations (overrides OPT_MAX_COMBOS)")
     parser.add_argument("--json-out", type=str, help="write summary JSON to path")
     parser.add_argument("--csv-out", type=str, help="write per-symbol CSV to path")
     return parser.parse_args()
@@ -560,6 +564,11 @@ def main() -> None:
     optimize_flag = args.optimize or os.getenv("OPTIMIZE", "0") == "1"
 
     # Overrides
+    global SYMBOLS, MAX_COMBOS
+    if args.symbols:
+        SYMBOLS = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if args.max_combos is not None:
+        MAX_COMBOS = args.max_combos
     if args.seed:
         random.seed(int(args.seed)) if args.seed.isdigit() else random.seed(args.seed)
     if args.slippage_bps is not None:
@@ -581,6 +590,7 @@ def main() -> None:
         print(f"  Period: Random {window_days}-day window within last {window_years} years")
     else:
         print(f"  Period: Last {LOOKBACK_DAYS} days")
+    print(f"  Symbols: {', '.join(SYMBOLS)}")
     print(f"  Assumptions: slippage {SLIPPAGE_BPS} bps, fee {FEE_PCT*100:.3f}% per side")
     print("=" * 60)
 
@@ -591,6 +601,7 @@ def main() -> None:
             random_window=random_window_flag if args.random_window else OPT_RANDOM_WINDOW,
             window_days=window_days if args.window_days is not None else OPT_WINDOW_DAYS,
             window_years=window_years if args.window_years is not None else OPT_WINDOW_YEARS,
+            max_combos=MAX_COMBOS,
         )
         if not best:
             print("No parameter set hit the targets. Try widening the grid or timeframe.")
