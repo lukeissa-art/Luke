@@ -40,6 +40,7 @@ RANDOM_WINDOW  = os.getenv("RANDOM_WINDOW", "true").lower() in {"1","true","yes"
 OPT_WINDOW_DAYS  = int(os.getenv("OPT_WINDOW_DAYS", str(WINDOW_DAYS)))
 OPT_WINDOW_YEARS = int(os.getenv("OPT_WINDOW_YEARS", str(WINDOW_YEARS)))
 OPT_RANDOM_WINDOW = os.getenv("OPT_RANDOM_WINDOW", str(RANDOM_WINDOW)).lower() in {"1","true","yes","on"}
+RANDOM_SEED    = os.getenv("RANDOM_SEED")
 FAST_EMA       = 8
 SLOW_EMA       = 13
 RSI_PERIOD     = 10
@@ -57,6 +58,8 @@ STARTING_CASH  = 100_000.0
 POSITION_SIZE  = 0.20                      # 20% of equity per trade
 MAX_POSITIONS  = 3
 COOLDOWN_BARS  = 3                         # bars to wait after a trade
+SLIPPAGE_BPS   = float(os.getenv("SLIPPAGE_BPS", "5"))   # 0.05% default
+FEE_PCT        = float(os.getenv("FEE_PCT", "0.0005"))   # 0.05% per side default
 
 # Targets for optimization
 TARGET_RETURN_PCT = 0.5
@@ -80,7 +83,13 @@ def fetch_crypto_bars(
     random_window: bool | None = None,
     window_days: int | None = None,
     window_years: int | None = None,
-) -> list[dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
+    if RANDOM_SEED is not None:
+        try:
+            random.seed(int(RANDOM_SEED))
+        except ValueError:
+            random.seed(RANDOM_SEED)
+
     now = datetime.now(timezone.utc)
     use_random = RANDOM_WINDOW if random_window is None else random_window
     win_days = WINDOW_DAYS if window_days is None else window_days
@@ -181,6 +190,7 @@ def backtest_symbol(
     equity     = STARTING_CASH
     position   = 0.0       # qty held
     entry_price = 0.0
+    entry_price_eff = 0.0
     trades     = []
     cooldown   = 0
     peak_equity = STARTING_CASH
@@ -200,35 +210,41 @@ def backtest_symbol(
 
         # Check stop loss / take profit on open position
         if position > 0:
-            pnl_pct = (price - entry_price) / entry_price
+            pnl_pct = (price - entry_price) / entry_price if entry_price else 0
             if pnl_pct <= -stop_loss_pct:
-                proceeds = position * price
-                cash += proceeds
+                eff_exit = price * (1 - SLIPPAGE_BPS / 10_000)
+                proceeds = position * eff_exit
+                fee = proceeds * FEE_PCT
+                cash += proceeds - fee
                 trades.append({
                     "type": "SELL",
                     "reason": "stop_loss",
-                    "entry": entry_price,
-                    "exit": price,
+                    "entry": entry_price_eff or entry_price,
+                    "exit": eff_exit,
                     "pnl_pct": round(pnl_pct * 100, 3),
                     "time": times[i],
                 })
                 position = 0.0
                 entry_price = 0.0
+                entry_price_eff = 0.0
                 cooldown = cooldown_bars
                 continue
             elif pnl_pct >= take_profit_pct:
-                proceeds = position * price
-                cash += proceeds
+                eff_exit = price * (1 - SLIPPAGE_BPS / 10_000)
+                proceeds = position * eff_exit
+                fee = proceeds * FEE_PCT
+                cash += proceeds - fee
                 trades.append({
                     "type": "SELL",
                     "reason": "take_profit",
-                    "entry": entry_price,
-                    "exit": price,
+                    "entry": entry_price_eff or entry_price,
+                    "exit": eff_exit,
                     "pnl_pct": round(pnl_pct * 100, 3),
                     "time": times[i],
                 })
                 position = 0.0
                 entry_price = 0.0
+                entry_price_eff = 0.0
                 cooldown = cooldown_bars
                 continue
 
@@ -263,37 +279,46 @@ def backtest_symbol(
             budget = min(equity * position_size, cash * 0.95)
             qty    = budget / price
             if qty > 0:
-                cost = qty * price
-                cash -= cost
+                eff_entry = price * (1 + SLIPPAGE_BPS / 10_000)
+                cost = qty * eff_entry
+                fee = cost * FEE_PCT
+                cash -= cost + fee
                 position = qty
                 entry_price = price
+                entry_price_eff = eff_entry
 
         elif signal == "SELL" and position > 0:
-            proceeds = position * price
-            pnl_pct  = (price - entry_price) / entry_price
-            cash += proceeds
+            eff_exit = price * (1 - SLIPPAGE_BPS / 10_000)
+            proceeds = position * eff_exit
+            fee = proceeds * FEE_PCT
+            pnl_pct  = (eff_exit - (entry_price_eff or entry_price)) / (entry_price_eff or entry_price)
+            cash += proceeds - fee
             trades.append({
                 "type": "SELL",
                 "reason": "signal",
-                "entry": entry_price,
-                "exit": price,
+                "entry": entry_price_eff or entry_price,
+                "exit": eff_exit,
                 "pnl_pct": round(pnl_pct * 100, 3),
                 "time": times[i],
             })
             position = 0.0
             entry_price = 0.0
+            entry_price_eff = 0.0
             cooldown = cooldown_bars
 
     # Close any open position at end
     if position > 0:
         final_price = closes[-1]
-        pnl_pct = (final_price - entry_price) / entry_price
-        cash += position * final_price
+        eff_exit = final_price * (1 - SLIPPAGE_BPS / 10_000)
+        proceeds = position * eff_exit
+        fee = proceeds * FEE_PCT
+        pnl_pct = (eff_exit - (entry_price_eff or entry_price)) / (entry_price_eff or entry_price)
+        cash += proceeds - fee
         trades.append({
             "type": "SELL",
             "reason": "end_of_backtest",
-            "entry": entry_price,
-            "exit": final_price,
+            "entry": entry_price_eff or entry_price,
+            "exit": eff_exit,
             "pnl_pct": round(pnl_pct * 100, 3),
             "time": times[-1],
         })
@@ -306,6 +331,35 @@ def backtest_symbol(
     win_rate = len(winning) / len(trades) * 100 if trades else 0
     avg_win  = sum(t["pnl_pct"] for t in winning) / len(winning) if winning else 0
     avg_loss = sum(t["pnl_pct"] for t in losing)  / len(losing)  if losing  else 0
+    profit_factor = (sum(t["pnl_pct"] for t in winning) / abs(sum(t["pnl_pct"] for t in losing))) if winning and losing else 0
+
+    # Risk stats
+    trade_returns = [t["pnl_pct"] / 100 for t in trades]
+    mean_ret = sum(trade_returns) / len(trade_returns) if trade_returns else 0
+    std_ret = (sum((r - mean_ret) ** 2 for r in trade_returns) / len(trade_returns)) ** 0.5 if trade_returns else 0
+    trades_per_year = 252 * (60 / 5)  # rough scale for 5Min bars
+    sharpe = (mean_ret / std_ret * (trades_per_year ** 0.5)) if std_ret > 0 else 0
+
+    # CAGR approximation using period length
+    period_days = 1
+    if times:
+        try:
+            start_dt = datetime.fromisoformat(times[0].replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(times[-1].replace("Z", "+00:00"))
+            period_days = max(1, (end_dt - start_dt).days or 1)
+        except Exception:
+            period_days = 1
+    cagr = (final_equity / STARTING_CASH) ** (365 / period_days) - 1 if final_equity > 0 else -1
+
+    # Max consecutive losses
+    max_consec_losses = 0
+    current_losses = 0
+    for t in trades:
+        if t["pnl_pct"] <= 0:
+            current_losses += 1
+            max_consec_losses = max(max_consec_losses, current_losses)
+        else:
+            current_losses = 0
 
     return {
         "symbol": symbol,
@@ -318,6 +372,10 @@ def backtest_symbol(
         "total_return_pct": round(total_return, 2),
         "final_equity": round(final_equity, 2),
         "max_drawdown_pct": round(max_drawdown * 100, 2),
+        "profit_factor": round(profit_factor, 3) if profit_factor else 0,
+        "sharpe": round(sharpe, 3) if sharpe else 0,
+        "cagr_pct": round(cagr * 100, 2),
+        "max_consec_losses": max_consec_losses,
         "trades": trades,
     }
 
