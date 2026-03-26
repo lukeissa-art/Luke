@@ -10,6 +10,7 @@ Make sure your .env file is set up with your Alpaca API keys.
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 import sys
@@ -509,13 +510,42 @@ def optimize(
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Backtest / optimize the strategy")
+    parser.add_argument("--optimize", action="store_true", help="run optimizer instead of single backtest")
+    parser.add_argument("--window-days", type=int, help="override window length for random sampling")
+    parser.add_argument("--window-years", type=int, help="override window lookback years for random sampling")
+    parser.add_argument("--random-window", type=str, choices=["true", "false"], help="force random window on/off")
+    parser.add_argument("--seed", type=str, help="set RNG seed for reproducibility")
+    parser.add_argument("--slippage-bps", type=float, help="override slippage bps per side")
+    parser.add_argument("--fee-pct", type=float, help="override fee percentage per side")
+    return parser.parse_args()
+
+
 def main() -> None:
-    optimize_flag = "--optimize" in sys.argv or os.getenv("OPTIMIZE", "0") == "1"
+    args = parse_args()
+    optimize_flag = args.optimize or os.getenv("OPTIMIZE", "0") == "1"
+
+    # Overrides
+    if args.seed:
+        random.seed(int(args.seed)) if args.seed.isdigit() else random.seed(args.seed)
+    if args.slippage_bps is not None:
+        global SLIPPAGE_BPS
+        SLIPPAGE_BPS = args.slippage_bps
+    if args.fee_pct is not None:
+        global FEE_PCT
+        FEE_PCT = args.fee_pct
+
+    window_days = args.window_days if args.window_days is not None else WINDOW_DAYS
+    window_years = args.window_years if args.window_years is not None else WINDOW_YEARS
+    random_window_flag = (
+        args.random_window.lower() == "true" if args.random_window else RANDOM_WINDOW
+    )
 
     print("=" * 60)
     print("  BACKTEST RESULTS")
-    if RANDOM_WINDOW:
-        print(f"  Period: Random {WINDOW_DAYS}-day window within last {WINDOW_YEARS} years")
+    if random_window_flag:
+        print(f"  Period: Random {window_days}-day window within last {window_years} years")
     else:
         print(f"  Period: Last {LOOKBACK_DAYS} days")
     print(f"  Assumptions: slippage {SLIPPAGE_BPS} bps, fee {FEE_PCT*100:.3f}% per side")
@@ -525,9 +555,9 @@ def main() -> None:
         print(f"Running parameter search for targets "
               f"return>={TARGET_RETURN_PCT}% win_rate>={TARGET_WIN_RATE}% ...")
         best = optimize(
-            random_window=OPT_RANDOM_WINDOW,
-            window_days=OPT_WINDOW_DAYS,
-            window_years=OPT_WINDOW_YEARS,
+            random_window=random_window_flag if args.random_window else OPT_RANDOM_WINDOW,
+            window_days=window_days if args.window_days is not None else OPT_WINDOW_DAYS,
+            window_years=window_years if args.window_years is not None else OPT_WINDOW_YEARS,
         )
         if not best:
             print("No parameter set hit the targets. Try widening the grid or timeframe.")
@@ -551,7 +581,12 @@ def main() -> None:
         "cooldown_bars": COOLDOWN_BARS,
     }
 
-    summary = run_params_backtest(params)
+    summary = run_params_backtest(
+        params,
+        random_window=random_window_flag,
+        window_days=window_days,
+        window_years=window_years,
+    )
     all_results = summary["results"]
 
     for result in all_results:
