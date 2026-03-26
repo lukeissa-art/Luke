@@ -93,7 +93,9 @@ def fetch_crypto_bars(
     random_window: bool | None = None,
     window_days: int | None = None,
     window_years: int | None = None,
-    ) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]]:
+    if not API_KEY or not API_SECRET:
+        raise ValueError("ALPACA_API_KEY/ALPACA_API_SECRET are required for backtesting")
     now = datetime.now(timezone.utc)
     use_random = RANDOM_WINDOW if random_window is None else random_window
     win_days = WINDOW_DAYS if window_days is None else window_days
@@ -390,7 +392,7 @@ def run_params_backtest(
     random_window: bool | None = None,
     window_days: int | None = None,
     window_years: int | None = None,
-    bars_cache: dict[str, list[dict[str, Any]]] | None = None,
+    bars_cache: dict[tuple[str, str], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """
     Execute backtest across all symbols for a parameter set.
@@ -398,8 +400,9 @@ def run_params_backtest(
     all_results: list[dict[str, Any]] = []
     for symbol in SYMBOLS:
         try:
-            if bars_cache and symbol in bars_cache:
-                bars = bars_cache[symbol]
+            cache_key = (symbol, params["timeframe"])
+            if bars_cache and cache_key in bars_cache:
+                bars = bars_cache[cache_key]
             else:
                 bars = fetch_crypto_bars(
                     symbol,
@@ -466,20 +469,22 @@ def optimize(
         "cooldown_bars": [3, 5],
     }
 
-    # Fetch bars once per symbol to speed up search and ensure a consistent window
-    bars_cache: dict[str, list[dict[str, Any]]] = {}
+    # Fetch bars once per symbol/timeframe to speed up search and ensure a consistent window
+    bars_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    timeframes = set(param_grid["timeframe"])
     for symbol in SYMBOLS:
-        try:
-            bars_cache[symbol] = fetch_crypto_bars(
-                symbol,
-                LOOKBACK_DAYS,
-                "5Min",
-                random_window=random_window,
-                window_days=window_days,
-                window_years=window_years,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(f"  Skipping {symbol} in optimizer due to fetch error: {exc}")
+        for tf in timeframes:
+            try:
+                bars_cache[(symbol, tf)] = fetch_crypto_bars(
+                    symbol,
+                    LOOKBACK_DAYS,
+                    tf,
+                    random_window=random_window,
+                    window_days=window_days,
+                    window_years=window_years,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"  Skipping {symbol} {tf} in optimizer due to fetch error: {exc}")
 
     best: dict[str, Any] | None = None
     combos = list(product(*param_grid.values()))
