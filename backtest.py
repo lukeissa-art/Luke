@@ -80,6 +80,10 @@ REQUEST_TIMEOUT = 30
 MAX_RETRIES = 4
 BACKOFF_SECONDS = [2, 4, 8, 15]
 
+# Short-circuit if creds missing
+if not API_KEY or not API_SECRET:
+    raise SystemExit("ALPACA_API_KEY and ALPACA_API_SECRET are required. Set them in your .env or environment.")
+
 # Optimizer limits
 MAX_COMBOS = int(os.getenv("OPT_MAX_COMBOS", "60"))
 
