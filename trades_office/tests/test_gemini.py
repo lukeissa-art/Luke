@@ -73,7 +73,7 @@ def test_gemini_booking_call(conn, shop):
     assert db.get(conn, "calls", c["id"])["outcome"] == "booked"
 
     req = fake.requests[0]
-    assert req["model"] == "gemini-3.5-flash"
+    assert req["model"] == "gemini-3.8-flash"
     names = {d.name for d in req["config"].tools[0].function_declarations}
     assert {"check_availability", "book_appointment", "end_call"} <= names
     # tool result goes back as a function_response with the parsed JSON result
@@ -123,22 +123,26 @@ class NotFound(Exception):
 
 def test_gemini_falls_back_when_model_unavailable(conn, shop, monkeypatch):
     monkeypatch.setattr(llm.GeminiBackend, "_model_override", None)
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.5-flash")
+    from app.config import get_settings
+    get_settings.cache_clear()
     c = calls.start_call(conn, shop, "CAG5", "+15125550142", now=NOW)
 
     class Picky(FakeGemini):
         def _generate(self, *, model, contents, config):
-            if model != llm.FALLBACK_GEMINI_MODEL:
+            if model != "gemini-3.9-flash":
                 self.requests.append({"model": model})
-                raise NotFound("404 NOT_FOUND models/gemini-3.5-flash is not found")
+                raise NotFound("404 NOT_FOUND. This model models/gemini-3.5-flash is no longer available to new "
+                               "users. Please update your code to use models/gemini-3.9-flash for the latest features.")
             return super()._generate(model=model, contents=contents, config=config)
 
     fake = Picky([gem(text("Hi! How can I help?"))])
     turn = respond(conn, shop, c["id"], fake, "hello")
     assert turn.action == "continue" and "help" in turn.say
-    assert [r["model"] for r in fake.requests] == ["gemini-3.5-flash", "gemini-2.5-flash"]
+    # follows the replacement Google names in the error
+    assert [r["model"] for r in fake.requests] == ["gemini-3.5-flash", "gemini-3.9-flash"]
     decl = fake.requests[1]["config"].tools[0].function_declarations[0]
     assert "additionalProperties" not in json.dumps(decl.parameters_json_schema)
-    assert fake.requests[1]["config"].thinking_config is None  # 2.5 doesn't take thinking_level
     assert llm.current_model() == "gemini-3.5-flash" or llm.provider() == "anthropic"
 
 
