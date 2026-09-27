@@ -90,8 +90,22 @@ class AnthropicBackend:
         }
 
 
+FALLBACK_GEMINI_MODEL = "gemini-2.5-flash"
+
+
+def _gemini_schema(schema: Any) -> Any:
+    """Plain JSON Schema for Gemini: drop keys some Gemini models reject."""
+    if isinstance(schema, dict):
+        return {k: _gemini_schema(v) for k, v in schema.items() if k not in ("additionalProperties", "strict")}
+    if isinstance(schema, list):
+        return [_gemini_schema(v) for v in schema]
+    return schema
+
+
 class GeminiBackend:
     name = "gemini"
+    # Set when the configured model isn't available on this key and the fallback worked.
+    _model_override: str | None = None
 
     def __init__(self, client: Any = None):
         if client is None:
@@ -122,26 +136,25 @@ class GeminiBackend:
 
         declarations = [
             types.FunctionDeclaration(
-                name=t["name"], description=t["description"], parameters_json_schema=t["input_schema"]
+                name=t["name"], description=t["description"],
+                parameters_json_schema=_gemini_schema(t["input_schema"]),
             )
             for t in tools
         ]
-        model = get_settings().gemini_model
-        config = types.GenerateContentConfig(
-            system_instruction=system,
-            tools=[types.Tool(function_declarations=declarations)],
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            # Thinking tokens count against this limit, so leave plenty of room.
-            max_output_tokens=8192,
-        )
-        if model.startswith("gemini-3"):
-            # A phone receptionist doesn't need deep reasoning; low thinking keeps replies fast.
-            config.thinking_config = types.ThinkingConfig(thinking_level="low")
-        response = self.client.models.generate_content(
-            model=model,
-            contents=[types.Content.model_validate(m) for m in messages],
-            config=config,
-        )
+        contents = [types.Content.model_validate(m) for m in messages]
+        model = GeminiBackend._model_override or get_settings().gemini_model
+        try:
+            response = self._generate(model, system, declarations, contents)
+        except Exception as exc:
+            # The configured model may not exist or not be enabled for this key (common on the
+            # free tier with brand-new models). Fall back once to a widely available model.
+            code = getattr(exc, "code", None)
+            if model == FALLBACK_GEMINI_MODEL or code not in (400, 403, 404):
+                raise
+            log.warning("Gemini model %s failed (%s: %s); falling back to %s",
+                        model, type(exc).__name__, str(exc)[:200], FALLBACK_GEMINI_MODEL)
+            response = self._generate(FALLBACK_GEMINI_MODEL, system, declarations, contents)
+            GeminiBackend._model_override = FALLBACK_GEMINI_MODEL
         candidate = (response.candidates or [None])[0]
         block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
         if block_reason:
@@ -165,6 +178,21 @@ class GeminiBackend:
         content["role"] = "model"
         return Step(spoken=spoken, tool_calls=calls, assistant_message=content)
 
+    def _generate(self, model: str, system: str, declarations: list, contents: list):
+        from google.genai import types
+
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            tools=[types.Tool(function_declarations=declarations)],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            # Thinking tokens count against this limit, so leave plenty of room.
+            max_output_tokens=8192,
+        )
+        if model.startswith("gemini-3"):
+            # A phone receptionist doesn't need deep reasoning; low thinking keeps replies fast.
+            config.thinking_config = types.ThinkingConfig(thinking_level="low")
+        return self.client.models.generate_content(model=model, contents=contents, config=config)
+
     def tool_results_message(self, results: list[ToolResult]) -> dict[str, Any]:
         parts = []
         for r in results:
@@ -185,6 +213,13 @@ def _maybe_json(text: str) -> Any:
         return json.loads(text)
     except ValueError:
         return text
+
+
+def current_model() -> str:
+    s = get_settings()
+    if provider() == "gemini":
+        return GeminiBackend._model_override or s.gemini_model
+    return s.anthropic_model
 
 
 def provider() -> str:

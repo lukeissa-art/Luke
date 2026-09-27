@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash"
 
     # Claude
+    anthropic_api_key: str = ""  # read by the Anthropic SDK from the environment too
     anthropic_model: str = "claude-sonnet-5"
     # Phone calls are latency-sensitive: "low" keeps replies fast. Raise if quality suffers.
     anthropic_effort: str = "low"

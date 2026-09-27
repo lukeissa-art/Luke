@@ -115,3 +115,47 @@ def test_gemini_empty_reply_is_an_error_not_a_refusal(conn, shop):
     assert turn.action == "transfer"
     cfg = fake.requests[0]["config"]
     assert cfg.max_output_tokens == 8192 and cfg.thinking_config.thinking_level == types.ThinkingLevel.LOW
+
+
+class NotFound(Exception):
+    code = 404
+
+
+def test_gemini_falls_back_when_model_unavailable(conn, shop, monkeypatch):
+    monkeypatch.setattr(llm.GeminiBackend, "_model_override", None)
+    c = calls.start_call(conn, shop, "CAG5", "+15125550142", now=NOW)
+
+    class Picky(FakeGemini):
+        def _generate(self, *, model, contents, config):
+            if model != llm.FALLBACK_GEMINI_MODEL:
+                self.requests.append({"model": model})
+                raise NotFound("404 NOT_FOUND models/gemini-3.5-flash is not found")
+            return super()._generate(model=model, contents=contents, config=config)
+
+    fake = Picky([gem(text("Hi! How can I help?"))])
+    turn = respond(conn, shop, c["id"], fake, "hello")
+    assert turn.action == "continue" and "help" in turn.say
+    assert [r["model"] for r in fake.requests] == ["gemini-3.5-flash", "gemini-2.5-flash"]
+    decl = fake.requests[1]["config"].tools[0].function_declarations[0]
+    assert "additionalProperties" not in json.dumps(decl.parameters_json_schema)
+    assert fake.requests[1]["config"].thinking_config is None  # 2.5 doesn't take thinking_level
+    assert llm.current_model() == "gemini-3.5-flash" or llm.provider() == "anthropic"
+
+
+def test_ai_check_page_shows_the_error(settings, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import receptionist
+    from app.main import app
+
+    class Broken:
+        def user_message(self, t):
+            return {}
+
+        def step(self, *a):
+            raise RuntimeError("400 API key not valid. Please pass a valid API key.")
+
+    monkeypatch.setattr(receptionist, "make_backend", lambda client=None: Broken())
+    with TestClient(app) as client:
+        page = client.get("/admin/ai-check", auth=("admin", "secret"))
+    assert page.status_code == 200 and "Failing" in page.text and "API key not valid" in page.text

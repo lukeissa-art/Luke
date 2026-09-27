@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>AI check</h1>
+<div class="card">
+  <p><span class="pill {{ 'active' if ok else 'cancelled' }}">{{ "Working" if ok else "Failing" }}</span></p>
+  <table>
+    <tr><th>Provider</th><td>{{ info.provider }}</td></tr>
+    <tr><th>Model</th><td>{{ info.model_used }}{% if info.model_used != info.model %} <span class="muted">(fell back from {{ info.model }})</span>{% endif %}</td></tr>
+    <tr><th>API key</th><td>{{ info.key }}</td></tr>
+    <tr><th>Time</th><td>{{ info.seconds }}s</td></tr>
+    <tr><th>{{ "Reply" if ok else "Error" }}</th><td style="white-space:pre-wrap;word-break:break-word">{{ result }}</td></tr>
+  </table>
+</div>
+{% if not ok %}
+<div class="card">
+  <h2>What the error usually means</h2>
+  <ul>
+    <li><b>API key not valid / PERMISSION_DENIED / 403</b>: the key is wrong or was copied with a space. Re-paste it in Render → Environment.</li>
+    <li><b>RESOURCE_EXHAUSTED / 429 / quota</b>: the free tier's limit was hit. Wait a minute, or turn on billing in Google AI Studio.</li>
+    <li><b>NOT_FOUND / 404 model</b>: the model isn't available on your key. Set <code>GEMINI_MODEL=gemini-2.5-flash</code> in Render → Environment.</li>
+    <li><b>MISSING key</b>: add <code>GEMINI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>) in Render → Environment.</li>
+  </ul>
+</div>
+{% endif %}
+<p><a href="/admin/ai-check">Run again</a></p>
+{% endblock %}
