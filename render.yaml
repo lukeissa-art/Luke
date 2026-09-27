@@ -9,13 +9,16 @@ services:
     buildFilter:
       paths:
         - trades_office/**
-    plan: starter            # a persistent disk needs a paid instance (~$7/mo)
+    # Free plan: sleeps when idle and has no persistent disk, so data resets on every
+    # restart or deploy. Fine for showing the website. Before real shops or phone calls,
+    # switch to `plan: starter` (~$7/mo) and add back:
+    #   disk:
+    #     name: data
+    #     mountPath: /data
+    #     sizeGB: 1
+    plan: free
     healthCheckPath: /health
     autoDeploy: true
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: DATABASE_PATH
         value: /data/trades_office.db

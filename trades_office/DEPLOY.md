@@ -13,11 +13,13 @@ Have these ready:
 ## Option A: Render (easiest)
 
 1. Go to **dashboard.render.com → New → Blueprint**.
-2. Connect GitHub and pick the **lukeissa-art/Luke** repo. For the branch, pick `main` once this work is merged, or `claude/ai-trades-back-office-aoy266` until then.
-3. Render reads `render.yaml` and shows one web service, **tradedesk-ai**, with a 1 GB disk. It asks for the values marked "sync: false":
+2. Connect GitHub and pick the **lukeissa-art/Luke** repo, branch `main`.
+3. Render reads `render.yaml` and shows one web service, **tradedesk-ai**, on the **Free** plan. It asks for the values marked "sync: false":
    - `ANTHROPIC_API_KEY`, `CONTACT_EMAIL`, `FOUNDER_PHONE` (fill these in now)
    - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `COMPANY_SMS_NUMBER` (leave blank until Twilio is set up; texts are logged instead of sent)
-4. Click **Apply**. The first build takes 3 to 5 minutes. The plan is **Starter (~$7/month)**, because a persistent disk needs a paid instance.
+4. Click **Apply**. The first build takes 3 to 5 minutes.
+
+   **About the free plan:** the service sleeps after about 15 minutes with no visitors, and the first visit after that takes up to a minute to load. There is no disk, so trial signups and shops you add are **wiped on every restart or deploy** (the demo shop is recreated automatically). That's fine for showing the website. Before real trial shops or phone calls, upgrade: in `render.yaml`, change `plan: free` to `plan: starter` (~$7/month) and uncomment the `disk` block, or in the Render dashboard change the instance type to Starter and add a 1 GB disk mounted at `/data`.
 5. When it shows **Live**, open `https://tradedesk-ai.onrender.com` (Render shows the exact URL).
 6. Your dashboard login: the username is `admin`, and the password is under the service's **Environment** tab (`ADMIN_PASSWORD`, generated for you). Open `/admin/`.
 
