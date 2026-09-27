@@ -62,7 +62,7 @@ class AnthropicBackend:
             kwargs = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
         response = self.client.beta.messages.create(
             model=s.anthropic_model,
-            max_tokens=2048,
+            max_tokens=8192,
             system=system,
             tools=tools,
             messages=messages,
@@ -97,7 +97,18 @@ class GeminiBackend:
         if client is None:
             from google import genai
 
-            client = genai.Client(api_key=get_settings().gemini_api_key)
+            from google.genai import types
+
+            client = genai.Client(
+                api_key=get_settings().gemini_api_key,
+                # Retry briefly on rate limits / overload, but stay inside Twilio's ~15s webhook window.
+                http_options=types.HttpOptions(
+                    timeout=12_000,
+                    retry_options=types.HttpRetryOptions(
+                        attempts=3, initial_delay=1.0, max_delay=3.0, http_status_codes=[429, 500, 503]
+                    ),
+                ),
+            )
         self.client = client
 
     def user_message(self, text: str) -> dict[str, Any]:
@@ -115,22 +126,33 @@ class GeminiBackend:
             )
             for t in tools
         ]
+        model = get_settings().gemini_model
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            tools=[types.Tool(function_declarations=declarations)],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            # Thinking tokens count against this limit, so leave plenty of room.
+            max_output_tokens=8192,
+        )
+        if model.startswith("gemini-3"):
+            # A phone receptionist doesn't need deep reasoning; low thinking keeps replies fast.
+            config.thinking_config = types.ThinkingConfig(thinking_level="low")
         response = self.client.models.generate_content(
-            model=get_settings().gemini_model,
+            model=model,
             contents=[types.Content.model_validate(m) for m in messages],
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                tools=[types.Tool(function_declarations=declarations)],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                max_output_tokens=2048,
-            ),
+            config=config,
         )
         candidate = (response.candidates or [None])[0]
-        if candidate is None or candidate.content is None:
-            reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
-            log.warning("Gemini returned no content (block reason: %s)", reason)
+        block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
+        if block_reason:
+            log.warning("Gemini blocked the request: %s", block_reason)
             return Step(refused=True)
-        parts = candidate.content.parts or []
+        if candidate is None or candidate.content is None or not candidate.content.parts:
+            finish = getattr(candidate, "finish_reason", None)
+            if str(finish).endswith(("SAFETY", "PROHIBITED_CONTENT")):
+                return Step(refused=True)
+            raise RuntimeError(f"Gemini returned an empty reply (finish reason: {finish})")
+        parts = candidate.content.parts
         calls = [
             ToolCall(p.function_call.id or p.function_call.name, p.function_call.name, dict(p.function_call.args or {}))
             for p in parts

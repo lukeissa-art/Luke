@@ -219,8 +219,9 @@ class Receptionist:
         self.messages.append(self.backend.user_message(content))
         try:
             say = self._run_model()
-        except Exception:  # never leave a live caller hanging: any AI failure goes to a human
-            log.exception("Assistant failed on call %s; transferring to owner", self.call_id)
+        except Exception as exc:  # never leave a live caller hanging: any AI failure goes to a human
+            log.exception("Assistant failed on call %s (%s: %s); transferring to owner",
+                          self.call_id, type(exc).__name__, str(exc)[:300])
             say = "I'm sorry, I'm having trouble on my end. Let me connect you to the team."
             self.action = "transfer"
             self.end_state = {"outcome": "transferred", "summary": "Assistant error; call sent to you."}

@@ -103,3 +103,15 @@ def test_gemini_error_transfers(conn, shop):
 
     turn = respond(conn, shop, c["id"], Broken(), "hello")
     assert turn.action == "transfer"
+
+
+def test_gemini_empty_reply_is_an_error_not_a_refusal(conn, shop):
+    # e.g. thinking used up the output budget: log it and transfer, don't hang up on the caller
+    c = calls.start_call(conn, shop, "CAG4", "+15125550142", now=NOW)
+    empty = types.GenerateContentResponse(candidates=[types.Candidate(
+        content=types.Content(role="model", parts=[]), finish_reason="MAX_TOKENS")])
+    fake = FakeGemini([empty])
+    turn = respond(conn, shop, c["id"], fake, "hello")
+    assert turn.action == "transfer"
+    cfg = fake.requests[0]["config"]
+    assert cfg.max_output_tokens == 8192 and cfg.thinking_config.thinking_level == types.ThinkingLevel.LOW
