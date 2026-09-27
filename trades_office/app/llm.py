@@ -61,11 +61,12 @@ class AnthropicBackend:
         kwargs: dict[str, Any] = {}
         if s.anthropic_fallbacks:
             kwargs = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        if tools:
+            kwargs["tools"] = tools
         response = self.client.beta.messages.create(
             model=s.anthropic_model,
             max_tokens=8192,
             system=system,
-            tools=tools,
             messages=messages,
             output_config={"effort": s.anthropic_effort},
             cache_control={"type": "ephemeral"},
@@ -197,7 +198,7 @@ class GeminiBackend:
 
         config = types.GenerateContentConfig(
             system_instruction=system,
-            tools=[types.Tool(function_declarations=declarations)],
+            tools=[types.Tool(function_declarations=declarations)] if declarations else None,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             # Thinking tokens count against this limit, so leave plenty of room.
             max_output_tokens=8192,
