@@ -1,0 +1,36 @@
+{% include "site/_page_top.html" %}<title>Terms · {{ company }}</title>
+{% include "site/_style.html" %}
+</head>
+<body>
+{% include "site/_header.html" %}
+<main class="wrap"><article class="prose">
+  <p class="eyebrow">Last updated September 27, 2026</p>
+  <h1>Terms of service</h1>
+  <p>These terms cover shops that use {{ company }}. Have them reviewed by your own attorney before relying on them.</p>
+  <h2>The service</h2>
+  <p>We provide an AI assistant that answers calls forwarded to a phone line we provide, books appointments, and sends text messages for your shop, plus setup and support.</p>
+  <h2>Plans, trial and billing</h2>
+  <ul>
+    <li>Plans are billed monthly in advance. Each plan includes a monthly call limit. Over the limit, calls ring through to your phone instead of the assistant.</li>
+    <li>The free trial lasts {{ trial_days }} days and needs no card. It becomes paid only if you sign up.</li>
+    <li>A ${{ setup_fee }} one-time setup fee applies unless we waive it in writing.</li>
+    <li>Cancel anytime. Service runs to the end of the paid month. We don't give partial refunds.</li>
+  </ul>
+  <h2>Your responsibilities</h2>
+  <ul>
+    <li>Give us accurate information about your services, hours, service area and prices, and tell us when it changes.</li>
+    <li>Answer or return transferred and urgent calls. The assistant is not an emergency service; emergencies are transferred to you.</li>
+    <li>Use the service lawfully, including the rules on recording calls and texting customers where you operate.</li>
+  </ul>
+  <h2>Texting</h2>
+  <p>We text only people who contacted your shop or are your customers, about their call or job. Every customer text includes opt-out instructions, and we honor STOP requests right away.</p>
+  <h2>Data</h2>
+  <p>Call transcripts, caller details and appointments belong to you. We use them only to provide and improve the service, as described in our <a href="/privacy">privacy policy</a>.</p>
+  <h2>Limits</h2>
+  <p>The assistant can make mistakes. We aren't liable for lost jobs, indirect damages, or amounts beyond the fees you paid us in the previous three months.</p>
+  <h2>Contact</h2>
+  <p><b>{{ contact_email }}</b></p>
+</article></main>
+{% include "site/_footer.html" %}
+</body>
+</html>

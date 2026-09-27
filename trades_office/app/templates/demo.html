@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/admin/shops/{{ shop.id }}">← {{ shop.name }}</a></p>
+<h1>Test call: {{ shop.name }}</h1>
+<p class="muted">Play the caller. Uses the real assistant and schedule; test bookings are released when the call ends and no customer texts are sent. The owner gets a [TEST CALL] summary text.</p>
+<div class="card" id="log" style="min-height:260px"><p><b>Assistant:</b> {{ greeting }}</p></div>
+<form id="f" style="display:flex; gap:8px"><input id="t" autocomplete="off" placeholder="Hi, my water heater is leaking all over the garage…" autofocus><button>Say</button></form>
+<p><button class="secondary" id="mic" type="button">🎤 Speak instead</button> <a href="">Start a new test call</a></p>
+<script>
+const log = document.getElementById("log"), input = document.getElementById("t");
+let callId = null;
+function add(who, text) { const p = document.createElement("p"); p.innerHTML = "<b></b> "; p.firstChild.textContent = who + ":"; p.append(text); log.append(p); }
+function speak(text) { if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+async function send(text) {
+  add("Caller", text); input.value = "";
+  const r = await fetch("/admin/shops/{{ shop.id }}/demo/say", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, call_id: callId})});
+  if (!r.ok) { add("System", "Error " + r.status); return; }
+  const d = await r.json(); callId = d.call_id; add("Assistant", d.say); speak(d.say);
+  if (d.action !== "continue") add("System", d.action === "transfer" ? "(call transferred to the owner's cell)" : "(call ended)");
+}
+document.getElementById("f").onsubmit = e => { e.preventDefault(); if (input.value.trim()) send(input.value.trim()); };
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+document.getElementById("mic").onclick = () => {
+  if (!SR) return alert("Speech recognition isn't supported in this browser; type instead.");
+  const rec = new SR(); rec.lang = "en-US"; rec.onresult = e => send(e.results[0][0].transcript); rec.start();
+};
+</script>
+{% endblock %}

@@ -1,0 +1,21 @@
+name: trades-office tests
+
+on:
+  push:
+    paths: ["trades_office/**", ".github/workflows/trades-office-tests.yml"]
+  pull_request:
+    paths: ["trades_office/**", ".github/workflows/trades-office-tests.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: trades_office
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q

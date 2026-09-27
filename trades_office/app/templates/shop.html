@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }}{% endblock %}
+{% block content %}
+<h1>{{ shop.name }} <span class="pill {{ shop.status }}">{{ shop.status }}</span></h1>
+<p class="muted">{{ shop.trade }} · {{ plan.name }} plan · {{ month_calls }}/{{ plan.monthly_call_cap }} calls this month ·
+  assistant line {{ shop.twilio_number|phone if shop.twilio_number else "not set" }} ·
+  <a href="/admin/shops/{{ shop.id }}/edit">Edit setup</a> · <a href="/admin/shops/{{ shop.id }}/demo">Test call in browser</a></p>
+
+<div class="grid">
+  <div class="stat"><b>{{ stats.calls }}</b><span>Calls answered (7 days)</span></div>
+  <div class="stat"><b>{{ stats.after_hours }}</b><span>After hours</span></div>
+  <div class="stat"><b>{{ stats.booked }}</b><span>Jobs booked</span></div>
+  <div class="stat"><b>${{ "{:,}".format(stats.est_revenue) }}</b><span>Est. work captured</span></div>
+  <div class="stat"><b>{{ stats.followups_sent }}</b><span>Follow-ups sent</span></div>
+</div>
+
+{% if shop.status == "trial" %}
+<div class="card"><h2>Trial</h2>
+  <p>Trial ends {{ shop.trial_ends_at[:10] }}. At the end, show the owner the calls caught and jobs booked, then send the payment link.</p>
+  <form method="post" action="/admin/shops/{{ shop.id }}/checkout">
+    <label style="display:inline"><input type="checkbox" name="waive_setup_fee" value="true" style="width:auto"> Waive $500 setup fee (first 10 customers, for a testimonial)</label><br><br>
+    <button>Create payment link</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card"><h2>Recent calls</h2>
+  <table><tr><th>When</th><th>Caller</th><th>Outcome</th><th>Problem</th></tr>
+  {% for c in calls %}<tr>
+    <td><a href="/admin/calls/{{ c.id }}">{{ c.started_at[:16].replace("T"," ") }}</a>{% if c.call_sid.startswith("demo-") %} <span class="muted">(test)</span>{% endif %}</td>
+    <td>{{ c.caller_name or "—" }}<div class="muted">{{ (c.callback_phone or c.caller_phone)|phone }}</div></td>
+    <td>{% if c.is_emergency %}<span class="pill urgent">urgent</span> {% endif %}<span class="pill {{ c.outcome }}">{{ c.outcome or c.status }}</span></td>
+    <td>{{ c.problem or c.summary }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No calls yet.</td></tr>{% endfor %}</table>
+</div>
+
+<div class="card"><h2>Upcoming appointments</h2>
+  <p class="muted">Next open windows: {% for s in slots %}{{ s.label }}{{ "; " if not loop.last }}{% else %}none in the next 10 days{% endfor %}</p>
+  <table><tr><th>#</th><th>When</th><th>Customer</th><th>Address</th><th>Job</th><th></th></tr>
+  {% for a in appts %}<tr><td>{{ a.id }}</td><td>{{ label(a.start_at) }}</td>
+    <td>{{ a.customer_name }}<div class="muted">{{ a.customer_phone|phone }}</div></td><td>{{ a.address }}</td><td>{{ a.problem }}</td>
+    <td><form class="inline" method="post" action="/admin/appointments/{{ a.id }}/done"><button class="secondary">Job done</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing booked.</td></tr>{% endfor %}</table>
+  <p class="muted">Owners can also text <code>DONE 12</code> (the appointment #) to the assistant line to mark a job complete and trigger the review request.</p>
+</div>
+
+<div class="card"><h2>Open quotes</h2>
+  <form method="post" action="/admin/shops/{{ shop.id }}/quotes" class="row">
+    <div><label>Customer</label><input name="customer_name"></div>
+    <div><label>Phone</label><input name="customer_phone" required></div>
+    <div><label>Amount</label><input name="amount" type="number" step="0.01"></div>
+    <div><label>For</label><input name="description" placeholder="water heater replacement"></div>
+    <div><label>&nbsp;</label><button>Add quote</button></div>
+  </form>
+  {% if not plan.quote_followups %}<p class="muted">Automatic quote follow-up texts are on the Plus plan.</p>{% endif %}
+  <table><tr><th>#</th><th>Customer</th><th>For</th><th>Amount</th><th>Status</th><th></th></tr>
+  {% for q in quotes %}<tr><td>{{ q.id }}</td><td>{{ q.customer_name }} <span class="muted">{{ q.customer_phone|phone }}</span></td>
+    <td>{{ q.description }}</td><td>${{ "{:,.0f}".format(q.amount) }}</td><td><span class="pill {{ q.status }}">{{ q.status }}</span></td>
+    <td>{% if q.status == "open" %}<form class="inline" method="post" action="/admin/quotes/{{ q.id }}/won"><button class="secondary">Won</button></form>
+        <form class="inline" method="post" action="/admin/quotes/{{ q.id }}/lost"><button class="secondary">Lost</button></form>{% endif %}</td></tr>
+  {% endfor %}</table>
+</div>
+
+<div class="card"><h2>Follow-up texts</h2>
+  <table><tr><th>Send at</th><th>Type</th><th>To</th><th>Status</th><th>Message</th></tr>
+  {% for f in followups %}<tr><td>{{ f.send_at[:16].replace("T"," ") }}</td><td>{{ f.kind }}</td><td>{{ f.to_phone|phone }}</td>
+    <td><span class="pill {{ f.status }}">{{ f.status }}</span></td><td class="muted">{{ f.body }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">None yet.</td></tr>{% endfor %}</table>
+</div>
+
+<div class="card"><h2>Twilio setup for this shop</h2>
+  <p>Voice webhook: <code>{{ base_url }}/voice/incoming</code> (POST) · Status callback: <code>{{ base_url }}/voice/status</code><br>
+     Messaging webhook: <code>{{ base_url }}/sms/incoming</code> (POST)</p>
+</div>
+{% endblock %}

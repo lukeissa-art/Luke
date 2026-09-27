@@ -1,3 +1,5 @@
+> **Also in this repo:** [`trades_office/`](trades_office/README.md) is an AI front office (receptionist, booking, follow-ups) for plumbing, HVAC and electrical shops. It's a separate app with its own README, business plan and launch docs.
+
 # Alpaca Stock Trader API
 
 This project gives you a trading bot API that connects directly to Alpaca.
