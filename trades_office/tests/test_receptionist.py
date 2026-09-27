@@ -49,9 +49,9 @@ def test_full_booking_call(conn, shop):
     assert second_turn[2]["content"][0]["type"] == "tool_result"
 
     req = fake.requests[0]
-    assert req["model"] == "claude-opus-5"
+    assert req["model"] == "claude-sonnet-5"
     assert req["output_config"] == {"effort": "low"}
-    assert req["fallbacks"] == "default"
+    assert "fallbacks" not in req and "betas" not in req
     assert {t["name"] for t in req["tools"]} >= {"check_availability", "book_appointment", "end_call"}
     assert all(t["strict"] for t in req["tools"])
 

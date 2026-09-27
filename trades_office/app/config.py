@@ -19,10 +19,11 @@ class Settings(BaseSettings):
     admin_password: str = "change-me"
 
     # Claude
-    anthropic_model: str = "claude-opus-5"
+    anthropic_model: str = "claude-sonnet-5"
     # Phone calls are latency-sensitive: "low" keeps replies fast. Raise if quality suffers.
     anthropic_effort: str = "low"
-    anthropic_fallbacks: bool = True
+    # Server-side refusal fallback (beta). Off by default: turn on only for a model that supports it.
+    anthropic_fallbacks: bool = False
 
     # Twilio (leave blank to run in console/dry-run mode)
     twilio_account_sid: str = ""
