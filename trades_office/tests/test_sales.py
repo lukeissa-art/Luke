@@ -85,3 +85,21 @@ def test_gemini_omits_tools_when_there_are_none():
     backend = llm.GeminiBackend(SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
     step = backend.step("sys", [], [backend.user_message("hi")])
     assert step.spoken == ["Hi"] and seen["tools"] is None
+
+
+def test_assistant_knows_the_whole_website(settings):
+    from app import sales
+
+    sales.website_text.cache_clear()
+    text = sales.website_text()
+    # home page: hero, emergency rules, FAQ answers, comparison
+    for snippet in ("The phone rings at 9:47 PM", "Emergencies aren't left to the AI",
+                    "Do I need a new phone number?", "You keep your number", "Answering service"):
+        assert snippet in text, snippet
+    # privacy policy and terms
+    assert "Reply STOP to opt out" in text and "Terms of service" in text
+    # scripts and chat widgets aren't included
+    assert "fetch(" not in text and "Ask about" not in text
+    starter = text[text.index("## Starter"):text.index("## Pro")]
+    assert "Not included: Books into your calendar" in starter
+    assert text in sales.system_prompt()
