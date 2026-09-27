@@ -247,5 +247,35 @@ def _demo_say(shop_id: int, body: dict):
     return JSONResponse({"say": turn.say, "action": turn.action, "call_id": call["id"]})
 
 
+@router.get("/ai-check", response_class=HTMLResponse)
+def ai_check(request: Request):
+    """Run one tiny request against the configured AI model and show exactly what happened."""
+    import time
+
+    from . import llm
+    from .receptionist import TOOL_END, make_backend
+
+    s = get_settings()
+    prov = llm.provider()
+    key = s.gemini_api_key if prov == "gemini" else s.anthropic_api_key
+    info = {"provider": prov, "model": llm.current_model(),
+            "key": f"set (ends in …{key[-4:]})" if len(key) > 8 else "MISSING"}
+    started = time.monotonic()
+    try:
+        backend = make_backend()
+        step = backend.step(
+            "You are testing a phone assistant. Reply with a short friendly sentence.",
+            [TOOL_END],
+            [backend.user_message("Hi, is anyone there?")],
+        )
+        ok = not step.refused
+        result = " ".join(step.spoken) or ("(model declined)" if step.refused else "(tool call only)")
+    except Exception as exc:
+        ok, result = False, f"{type(exc).__name__}: {exc}"
+    info["model_used"] = llm.current_model()
+    info["seconds"] = f"{time.monotonic() - started:.1f}"
+    return _render(request, "ai_check.html", ok=ok, result=result, info=info)
+
+
 def _404():
     raise HTTPException(status_code=404)
