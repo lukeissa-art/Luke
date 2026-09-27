@@ -1,5 +1,7 @@
+import os
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +11,8 @@ class Settings(BaseSettings):
     company_name: str = "TradeDesk AI"
     public_base_url: str = "http://localhost:8000"
     database_path: str = "trades_office.db"
+    run_worker: bool = True  # run follow-up/report jobs inside the web process
+    seed_demo: bool = False  # create the demo shop on startup if it's missing
 
     # Dashboard login (HTTP basic auth). Change before deploying.
     admin_username: str = "admin"
@@ -48,6 +52,21 @@ class Settings(BaseSettings):
     unbooked_followup_minutes: int = 15
     quote_followup_days: int = 2
     review_request_hours: int = 2
+
+    @model_validator(mode="after")
+    def _detect_host_url(self):
+        # Pick up the public URL Render / Railway assign, unless PUBLIC_BASE_URL is set explicitly.
+        if "PUBLIC_BASE_URL" not in os.environ:
+            if os.environ.get("RENDER_EXTERNAL_URL"):
+                self.public_base_url = os.environ["RENDER_EXTERNAL_URL"]
+            elif os.environ.get("RAILWAY_PUBLIC_DOMAIN"):
+                self.public_base_url = "https://" + os.environ["RAILWAY_PUBLIC_DOMAIN"]
+        self.public_base_url = self.public_base_url.rstrip("/")
+        return self
+
+    @property
+    def is_local(self) -> bool:
+        return self.public_base_url.startswith(("http://localhost", "http://127.0.0.1"))
 
     @property
     def twilio_enabled(self) -> bool:

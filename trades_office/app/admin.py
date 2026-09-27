@@ -21,6 +21,8 @@ security = HTTPBasic()
 
 def require_admin(creds: HTTPBasicCredentials = Depends(security)) -> str:
     s = get_settings()
+    if s.admin_password == "change-me" and not s.is_local:
+        raise HTTPException(status_code=503, detail="Set ADMIN_PASSWORD before using the dashboard.")
     ok = secrets.compare_digest(creds.username, s.admin_username) and secrets.compare_digest(
         creds.password, s.admin_password
     )

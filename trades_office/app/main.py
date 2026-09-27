@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from . import admin, billing, db, site, telephony
+from . import admin, billing, db, site, telephony, worker
 from .config import get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -13,7 +13,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.init_db()
+    if get_settings().seed_demo:
+        from scripts import seed_demo
+
+        seed_demo.main()
+    stop = worker.start_background() if get_settings().run_worker else None
     yield
+    if stop:
+        stop.set()
 
 
 app = FastAPI(title=get_settings().company_name, lifespan=lifespan)

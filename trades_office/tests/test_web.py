@@ -101,3 +101,21 @@ def test_browser_demo_call(client, conn, monkeypatch):
     assert d["action"] == "continue" and "name" in d["say"]
     call = db.get(conn, "calls", d["call_id"])
     assert call["call_sid"].startswith("demo-")
+
+
+def test_host_url_detection_and_default_password_guard(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://tradedesk-ai.onrender.com/")
+    s = Settings()
+    assert s.public_base_url == "https://tradedesk-ai.onrender.com" and not s.is_local
+
+    from app import admin
+    from fastapi import HTTPException
+    from fastapi.security import HTTPBasicCredentials
+
+    monkeypatch.setattr(admin, "get_settings", lambda: Settings(admin_password="change-me"))
+    with pytest.raises(HTTPException) as e:
+        admin.require_admin(HTTPBasicCredentials(username="admin", password="change-me"))
+    assert e.value.status_code == 503

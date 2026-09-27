@@ -56,6 +56,8 @@ With Twilio left blank, texts are logged to the console and saved in the `sms_lo
 
 ## Go live
 
+**Step-by-step hosting guide: [DEPLOY.md](DEPLOY.md)** (Render blueprint or Railway, about 15 minutes). The app runs as one service; follow-up jobs run inside it (`RUN_WORKER=true`).
+
 1. **Deploy** the `Dockerfile` (Railway, Render or Fly). Run two processes: `web` and `worker` (see `Procfile`). Put `DATABASE_PATH` on a persistent volume.
 2. **Claude**: set `ANTHROPIC_API_KEY`. The default model is `claude-opus-5` at `low` effort, which keeps phone replies quick. If callers notice pauses or quality slips, change `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT`. Server-side refusal fallbacks are on (`ANTHROPIC_FALLBACKS=true`).
 3. **Twilio**: buy one local number per shop. Set its Voice webhook to `POST {PUBLIC_BASE_URL}/voice/incoming`, its status callback to `{PUBLIC_BASE_URL}/voice/status`, and its Messaging webhook to `POST {PUBLIC_BASE_URL}/sms/incoming`. **Register for A2P 10DLC** before texting customers (see `docs/compliance.md`).

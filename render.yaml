@@ -1,0 +1,43 @@
+# Render Blueprint for the TradeDesk AI app (trades_office/).
+# Deploy: https://render.com/deploy?repo=https://github.com/lukeissa-art/Luke
+services:
+  - type: web
+    name: tradedesk-ai
+    runtime: docker
+    dockerfilePath: ./trades_office/Dockerfile
+    dockerContext: ./trades_office
+    buildFilter:
+      paths:
+        - trades_office/**
+    plan: starter            # a persistent disk needs a paid instance (~$7/mo)
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /data/trades_office.db
+      - key: ADMIN_PASSWORD
+        generateValue: true  # find it under Environment in the Render dashboard
+      - key: SEED_DEMO
+        value: "true"
+      - key: PUBLIC_DEMO_SHOP_ID
+        value: "1"
+      - key: COMPANY_NAME
+        value: TradeDesk AI
+      - key: SERVICE_REGION
+        value: Central Texas
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FOUNDER_PHONE
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: COMPANY_SMS_NUMBER
+        sync: false

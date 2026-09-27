@@ -18,6 +18,7 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "")
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("RUN_WORKER", "false")
     get_settings.cache_clear()
     db.init_db()
     yield get_settings()
