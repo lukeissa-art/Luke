@@ -12,9 +12,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import anthropic
-
-from . import db, emergency, scheduling, sms
+from . import db, emergency, llm, scheduling, sms
 from .config import get_settings
 from .plans import get_plan
 
@@ -152,12 +150,20 @@ def greeting(shop: sqlite3.Row) -> str:
     )
 
 
-def _client() -> anthropic.Anthropic:
+def _client() -> Any:
+    """The Anthropic client (patched in tests)."""
+    import anthropic
+
     return anthropic.Anthropic()
 
 
-def _block_dict(block: Any) -> dict[str, Any]:
-    return block.model_dump(exclude_none=True) if hasattr(block, "model_dump") else dict(block)
+def make_backend(client: Any = None):
+    """Gemini when GEMINI_API_KEY is set (or LLM_PROVIDER=gemini), otherwise Claude."""
+    if client is not None:
+        return llm.AnthropicBackend(client)
+    if llm.provider() == "gemini":
+        return llm.GeminiBackend()
+    return llm.AnthropicBackend(_client())
 
 
 class Receptionist:
@@ -168,6 +174,7 @@ class Receptionist:
         call: sqlite3.Row,
         *,
         client: Any = None,
+        backend: Any = None,
         now: datetime | None = None,
     ):
         self.conn = conn
@@ -178,7 +185,7 @@ class Receptionist:
         self.is_public_demo = call["call_sid"].startswith("demo-web-")
         self.messages: list[dict[str, Any]] = json.loads(call["messages"])
         self.transcript: list[dict[str, str]] = json.loads(call["transcript"])
-        self.client = client or _client()
+        self.backend = backend or make_backend(client)
         self.now = now
         self.plan = get_plan(shop["plan"])
         self.action = "continue"
@@ -209,7 +216,7 @@ class Receptionist:
                 "Offer to connect the caller to the owner right now.]"
             )
 
-        self.messages.append({"role": "user", "content": content})
+        self.messages.append(self.backend.user_message(content))
         try:
             say = self._run_model()
         except Exception:  # never leave a live caller hanging: any AI failure goes to a human
@@ -217,7 +224,7 @@ class Receptionist:
             say = "I'm sorry, I'm having trouble on my end. Let me connect you to the team."
             self.action = "transfer"
             self.end_state = {"outcome": "transferred", "summary": "Assistant error; call sent to you."}
-            self.messages.append({"role": "assistant", "content": say})
+            self.messages.append(self.backend.assistant_message(say))
         self.transcript.append({"role": "ai", "text": say})
         self._save()
         return Turn(say=say, action=self.action)
@@ -230,41 +237,21 @@ class Receptionist:
             tools = [TOOL_CHECK_AVAILABILITY, TOOL_BOOK, *tools]
         return tools
 
-    def _create(self):
-        s = get_settings()
-        kwargs: dict[str, Any] = {}
-        if s.anthropic_fallbacks:
-            kwargs = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
-        return self.client.beta.messages.create(
-            model=s.anthropic_model,
-            max_tokens=2048,
-            system=build_system_prompt(self.shop),
-            tools=self._tools(),
-            messages=self.messages,
-            output_config={"effort": s.anthropic_effort},
-            cache_control={"type": "ephemeral"},
-            **kwargs,
-        )
-
     def _run_model(self) -> str:
         spoken: list[str] = []
         for _ in range(MAX_TOOL_ROUNDS):
-            response = self._create()
-            if response.stop_reason == "refusal":
-                # Declined even after server-side fallback: end politely and have the owner call back.
+            step = self.backend.step(build_system_prompt(self.shop), self._tools(), self.messages)
+            if step.refused:
+                # The model declined: end politely and have the owner call back.
                 self.end_state = {"outcome": "message_taken", "summary": "Caller needs a callback."}
                 self.action = "hangup"
                 return "Thanks for calling. Someone from the shop will call you back shortly. Goodbye."
-
-            blocks = [_block_dict(b) for b in response.content if b.type != "fallback"]
-            self.messages.append({"role": "assistant", "content": blocks})
-            spoken += [b.text for b in response.content if b.type == "text" and b.text.strip()]
-
-            tool_uses = [b for b in response.content if b.type == "tool_use"]
-            if response.stop_reason != "tool_use" or not tool_uses:
+            self.messages.append(step.assistant_message)
+            spoken += step.spoken
+            if not step.tool_calls:
                 break
-            results = [self._run_tool(t.name, t.input, t.id) for t in tool_uses]
-            self.messages.append({"role": "user", "content": results})
+            results = [self._run_tool(call) for call in step.tool_calls]
+            self.messages.append(self.backend.tool_results_message(results))
             if self.action != "continue" and spoken:
                 break
 
@@ -276,23 +263,18 @@ class Receptionist:
             }.get(self.action, "Sorry, could you say that one more time?")
         return say
 
-    def _run_tool(self, name: str, args: dict[str, Any], tool_use_id: str) -> dict[str, Any]:
+    def _run_tool(self, call: llm.ToolCall) -> llm.ToolResult:
         try:
-            result = getattr(self, f"_tool_{name}")(**args)
+            result = getattr(self, f"_tool_{call.name}")(**call.args)
             is_error = False
         except scheduling.SlotUnavailable:
             result = "That window was just taken or is not valid. Call check_availability again."
             is_error = True
         except Exception as exc:  # report tool failures back to the model instead of crashing the call
-            log.exception("Tool %s failed", name)
+            log.exception("Tool %s failed", call.name)
             result = f"Tool error: {exc}"
             is_error = True
-        return {
-            "type": "tool_result",
-            "tool_use_id": tool_use_id,
-            "content": result if isinstance(result, str) else json.dumps(result),
-            "is_error": is_error,
-        }
+        return llm.ToolResult(call, result if isinstance(result, str) else json.dumps(result), is_error)
 
     # --- tools --------------------------------------------------------------------------
 
@@ -393,8 +375,8 @@ class Receptionist:
     def _life_safety(self, match: emergency.EmergencyMatch, content: str) -> Turn:
         self._flag_urgent(match.keyword)
         say = f"{match.caller_instructions} I'm connecting you to the owner right now."
-        self.messages.append({"role": "user", "content": content})
-        self.messages.append({"role": "assistant", "content": say})
+        self.messages.append(self.backend.user_message(content))
+        self.messages.append(self.backend.assistant_message(say))
         self.transcript.append({"role": "ai", "text": say})
         self.action = "transfer"
         self.end_state = {"outcome": "transferred", "summary": f"EMERGENCY ({match.keyword}): {content[-200:]}"}

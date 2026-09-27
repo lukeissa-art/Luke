@@ -3,7 +3,7 @@
 The whole product (website, dashboard, phone webhooks, follow-up jobs) runs as **one service** with one small database file on a persistent disk. Pick **one** host below. Both take about 15 minutes.
 
 Have these ready:
-- **Anthropic API key** (console.anthropic.com → API keys). Without it the site loads, but the assistant transfers every call to the owner.
+- **An AI key**: either a **Gemini API key** (aistudio.google.com/apikey → Create API key; there's a free tier) or an **Anthropic API key** (console.anthropic.com → API keys). Without one the site loads, but the assistant transfers every call to the owner.
 - Your **cell number** (you get a text for every trial signup)
 - A **contact email** for the website
 - Optional for now: Twilio account SID and auth token, plus one Twilio number for company texts
@@ -15,7 +15,7 @@ Have these ready:
 1. Go to **dashboard.render.com → New → Blueprint**.
 2. Connect GitHub and pick the **lukeissa-art/Luke** repo, branch `main`.
 3. Render reads `render.yaml` and shows one web service, **tradedesk-ai**, on the **Free** plan. It asks for the values marked "sync: false":
-   - `ANTHROPIC_API_KEY`, `CONTACT_EMAIL`, `FOUNDER_PHONE` (fill these in now)
+   - `GEMINI_API_KEY` **or** `ANTHROPIC_API_KEY` (one is enough; leave the other blank), plus `CONTACT_EMAIL` and `FOUNDER_PHONE` (fill these in now)
    - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `COMPANY_SMS_NUMBER` (leave blank until Twilio is set up; texts are logged instead of sent)
 4. Click **Apply**. The first build takes 3 to 5 minutes.
 
@@ -34,7 +34,7 @@ Have these ready:
 4. **Variables:** add
    ```
    ADMIN_PASSWORD=<a long password you choose>
-   ANTHROPIC_API_KEY=<your key>
+   GEMINI_API_KEY=<your key>        # or ANTHROPIC_API_KEY=<your key> to use Claude
    CONTACT_EMAIL=<your email>
    FOUNDER_PHONE=<your cell, e.g. +15125550123>
    SEED_DEMO=true
@@ -46,10 +46,14 @@ Have these ready:
 
 ---
 
+## Switching the AI model on a running service
+
+In Render (or Railway), open the service → **Environment**, add `GEMINI_API_KEY` with your key, and save. The service restarts and uses Gemini from then on. To go back to Claude, delete `GEMINI_API_KEY` (or set `LLM_PROVIDER=anthropic`).
+
 ## After it's live (10 minutes)
 
 1. **Check the site:** fill in the trial form with your own details. It should appear at the top of `/admin/`, and if Twilio is set up you get a text.
-2. **Try the demo** on the home page ("Be the customer"). If it only ever says it's connecting you to the team, the Anthropic key is missing or wrong. Check the service logs.
+2. **Try the demo** on the home page ("Be the customer"). If it only ever says it's connecting you to the team, the AI key is missing or wrong. Check the service logs.
 3. **Custom domain:** buy one (e.g. from Cloudflare or Namecheap), add it in Render (Settings → Custom Domains) or Railway (Networking → Custom Domain), create the DNS record they show you, then set `PUBLIC_BASE_URL=https://yourdomain.com` and redeploy.
 4. **Real company details:** set `COMPANY_NAME`, `SERVICE_REGION` and `CONTACT_EMAIL` in the environment and redeploy.
 
@@ -64,7 +68,7 @@ Have these ready:
 ## Running costs to expect
 
 - Hosting: about $5 to $7/month
-- Claude: a few cents per call (check the Anthropic console after your first week)
+- AI model: a few cents per call or less (Gemini has a free tier with rate limits; check usage in Google AI Studio or the Anthropic console after your first week)
 - Twilio: about $1.15/month per number, plus about $0.01 to $0.02 per call minute and about $0.008 per text, plus A2P registration fees
 
 ## Backups

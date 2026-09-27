@@ -1,0 +1,105 @@
+import json
+from types import SimpleNamespace
+
+from google.genai import types
+
+from app import calls, db, llm, scheduling
+from app.receptionist import Receptionist, make_backend
+from tests.conftest import NOW
+
+
+class FakeGemini:
+    """Stands in for google.genai.Client: returns scripted responses, records requests."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+        self.models = SimpleNamespace(generate_content=self._generate)
+
+    def _generate(self, *, model, contents, config):
+        self.requests.append({"model": model, "contents": [c.model_dump(mode="json", exclude_none=True) for c in contents],
+                              "config": config})
+        return self.responses.pop(0)
+
+
+def gem(*parts, finish="STOP"):
+    return types.GenerateContentResponse(candidates=[types.Candidate(
+        content=types.Content(role="model", parts=list(parts)), finish_reason=finish)])
+
+
+def text(t, signature=None):
+    return types.Part(text=t, thought_signature=signature)
+
+
+def call(name, args, id_=None):
+    return types.Part(function_call=types.FunctionCall(name=name, args=args, id=id_))
+
+
+def respond(conn, shop, call_id, fake, utterance):
+    row = db.get(conn, "calls", call_id)
+    return Receptionist(conn, shop, row, backend=llm.GeminiBackend(fake), now=NOW).respond(utterance)
+
+
+def test_provider_selection(monkeypatch, settings):
+    from app.config import get_settings
+
+    assert llm.provider() == "anthropic"
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    assert llm.provider() == "gemini"
+    assert isinstance(make_backend(), llm.GeminiBackend)
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    get_settings.cache_clear()
+    assert llm.provider() == "anthropic"
+
+
+def test_gemini_booking_call(conn, shop):
+    c = calls.start_call(conn, shop, "CAG", "+15125550142", now=NOW)
+    slot = scheduling.open_slots(conn, shop, now=NOW)[0]
+    fake = FakeGemini([
+        gem(call("check_availability", {"preferred_date": ""}), ),
+        gem(text("I can get someone out today between 12 and 2. Does that work?", signature=b"sig1")),
+        gem(call("book_appointment", {"slot_start": slot["start"], "customer_name": "Ann Lee",
+                                      "callback_phone": "5125550142", "address": "12 Oak St",
+                                      "problem_summary": "Leaking water heater"})),
+        gem(text("You're booked. Goodbye!"), call("end_call", {"outcome": "booked", "summary": "Booked leak."})),
+    ])
+    t1 = respond(conn, shop, c["id"], fake, "My water heater is leaking")
+    assert t1.action == "continue" and "12 and 2" in t1.say
+    t2 = respond(conn, shop, c["id"], fake, "Yes please, Ann Lee, 12 Oak St")
+    assert t2.action == "hangup" and "booked" in t2.say
+
+    assert conn.execute("SELECT customer_name FROM appointments").fetchone()[0] == "Ann Lee"
+    assert db.get(conn, "calls", c["id"])["outcome"] == "booked"
+
+    req = fake.requests[0]
+    assert req["model"] == "gemini-3.5-flash"
+    names = {d.name for d in req["config"].tools[0].function_declarations}
+    assert {"check_availability", "book_appointment", "end_call"} <= names
+    # tool result goes back as a function_response with the parsed JSON result
+    fr = fake.requests[1]["contents"][-1]["parts"][0]["function_response"]
+    assert fr["name"] == "check_availability" and "slots" in fr["response"]["result"]
+    # history survives the round trip through the database, thought signature included
+    later = fake.requests[2]["contents"]
+    assert later[0]["parts"][0]["text"].startswith("[Call started")
+    assert any(p.get("thought_signature") for m in later for p in m["parts"])
+    stored = json.loads(db.get(conn, "calls", c["id"])["messages"])
+    assert all(m["role"] in ("user", "model") for m in stored)
+
+
+def test_gemini_safety_block_takes_message(conn, shop):
+    c = calls.start_call(conn, shop, "CAG2", "+15125550142", now=NOW)
+    blocked = types.GenerateContentResponse(candidates=[], prompt_feedback=types.GenerateContentResponsePromptFeedback(
+        block_reason="SAFETY"))
+    turn = respond(conn, shop, c["id"], FakeGemini([blocked]), "something odd")
+    assert turn.action == "hangup" and "call you back" in turn.say
+
+
+def test_gemini_error_transfers(conn, shop):
+    c = calls.start_call(conn, shop, "CAG3", "+15125550142", now=NOW)
+
+    class Broken:
+        models = SimpleNamespace(generate_content=lambda **kw: (_ for _ in ()).throw(RuntimeError("bad key")))
+
+    turn = respond(conn, shop, c["id"], Broken(), "hello")
+    assert turn.action == "transfer"
