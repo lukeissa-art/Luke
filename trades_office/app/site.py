@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from . import calls, db, sms
 from .config import get_settings
@@ -84,6 +85,10 @@ async def trial_signup(request: Request):
     wants_json = "application/json" in request.headers.get("accept", "")
     if form.get("website"):  # honeypot field, hidden from people; bots fill it in
         return JSONResponse({"ok": True}) if wants_json else RedirectResponse("/thanks", status_code=303)
+    return await run_in_threadpool(_trial_signup, request, form, wants_json)
+
+
+def _trial_signup(request: Request, form, wants_json: bool):
     values, errors = _validate_lead(form)
     if errors:
         if wants_json:
@@ -123,6 +128,12 @@ async def public_demo(request: Request):
         return JSONResponse({"error": "You've reached the demo limit for now. Start a free trial to keep going."},
                             status_code=429)
     body = await request.json()
+    # The AI call takes seconds; run it off the event loop so the server (and its health
+    # check) keeps answering other requests meanwhile.
+    return await run_in_threadpool(_public_demo, shop_id, body)
+
+
+def _public_demo(shop_id: int, body: dict):
     text = str(body.get("text", ""))[:DEMO_MAX_CHARS]
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id)

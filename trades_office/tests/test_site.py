@@ -95,3 +95,53 @@ def test_public_demo_rate_limit(client, conn, monkeypatch):
     for _ in range(2):
         client.post("/demo/say", json={"text": "I smell gas"})
     assert client.post("/demo/say", json={"text": "hello"}).status_code == 429
+
+
+def test_health_answers_while_the_ai_is_thinking(settings, conn, monkeypatch):
+    """A slow AI reply must not freeze the server: Render restarts it if /health stalls."""
+    import threading
+    import time as _time
+
+    import httpx
+    import uvicorn
+
+    from app import receptionist
+
+    shop = make_shop(conn)
+    monkeypatch.setenv("PUBLIC_DEMO_SHOP_ID", str(shop["id"]))
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    class SlowBackend:
+        def __init__(self, *a, **k):
+            pass
+
+        def user_message(self, t):
+            return {"role": "user", "content": t}
+
+        def assistant_message(self, t):
+            return {"role": "assistant", "content": t}
+
+        def step(self, *a):
+            _time.sleep(3)
+            from app.llm import Step
+            return Step(spoken=["Got it."], assistant_message={"role": "assistant", "content": "Got it."})
+
+    monkeypatch.setattr(receptionist, "make_backend", lambda client=None: SlowBackend())
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8799, log_level="warning"))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    while not server.started:
+        _time.sleep(0.05)
+    try:
+        slow = threading.Thread(target=lambda: httpx.post("http://127.0.0.1:8799/demo/say",
+                                                          json={"text": "hi"}, timeout=10))
+        slow.start()
+        _time.sleep(0.5)
+        began = _time.monotonic()
+        assert httpx.get("http://127.0.0.1:8799/health", timeout=5).status_code == 200
+        assert _time.monotonic() - began < 1.0
+        slow.join()
+    finally:
+        server.should_exit = True
+        t.join(timeout=5)

@@ -9,6 +9,7 @@ import logging
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 from . import calls, db, followups, scheduling, sms
 from .config import get_settings
@@ -63,6 +64,10 @@ async def _form(request: Request) -> dict[str, str]:
 @router.post("/voice/incoming")
 async def voice_incoming(request: Request):
     p = await _form(request)
+    return await run_in_threadpool(_voice_incoming, p)
+
+
+def _voice_incoming(p: dict[str, str]):
     with db.session() as conn:
         shop = db.shop_by_number(conn, p.get("To", ""))
         if shop is None:
@@ -87,6 +92,10 @@ async def voice_incoming(request: Request):
 async def voice_no_answer(request: Request):
     """Owner didn't pick up during business hours: the assistant takes over."""
     p = await _form(request)
+    return await run_in_threadpool(_voice_no_answer, p)
+
+
+def _voice_no_answer(p: dict[str, str]):
     if p.get("DialCallStatus") == "completed":
         return twiml("<Hangup/>")
     with db.session() as conn:
@@ -100,6 +109,10 @@ async def voice_no_answer(request: Request):
 @router.post("/voice/respond")
 async def voice_respond(request: Request):
     p = await _form(request)
+    return await run_in_threadpool(_voice_respond, p)
+
+
+def _voice_respond(p: dict[str, str]):
     with db.session() as conn:
         call = conn.execute("SELECT * FROM calls WHERE call_sid = ?", (p.get("CallSid", ""),)).fetchone()
         if call is None:
@@ -119,6 +132,10 @@ async def voice_respond(request: Request):
 async def voice_status(request: Request):
     """Twilio call status callback: catches callers who hang up mid-conversation."""
     p = await _form(request)
+    return await run_in_threadpool(_voice_status, p)
+
+
+def _voice_status(p: dict[str, str]):
     if p.get("CallStatus") in ("completed", "busy", "failed", "no-answer", "canceled"):
         with db.session() as conn:
             call = conn.execute("SELECT id FROM calls WHERE call_sid = ?", (p.get("CallSid", ""),)).fetchone()
@@ -134,6 +151,10 @@ OWNER_HELP = ("Commands: DONE <appt#> marks a job complete and sends a review re
 @router.post("/sms/incoming")
 async def sms_incoming(request: Request):
     p = await _form(request)
+    return await run_in_threadpool(_sms_incoming, p)
+
+
+def _sms_incoming(p: dict[str, str]):
     sender, body = p.get("From", ""), p.get("Body", "").strip()
     with db.session() as conn:
         shop = db.shop_by_number(conn, p.get("To", ""))

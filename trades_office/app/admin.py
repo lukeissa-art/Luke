@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from . import calls, db, followups, reports, scheduling
 from .config import get_settings
@@ -228,6 +229,10 @@ def demo(request: Request, shop_id: int):
 @router.post("/shops/{shop_id}/demo/say")
 async def demo_say(shop_id: int, request: Request):
     body = await request.json()
+    return await run_in_threadpool(_demo_say, shop_id, body)  # AI call: keep the event loop free
+
+
+def _demo_say(shop_id: int, body: dict):
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id) or _404()
         call = db.get(conn, "calls", int(body["call_id"])) if body.get("call_id") else None
