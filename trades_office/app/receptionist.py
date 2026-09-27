@@ -125,8 +125,10 @@ numbers to confirm them. Read phone numbers digit by digit.
 - Use the caller ID number if the caller says it's the best number to reach them.
 - Never diagnose the problem or give repair instructions. The only exception is safety: water shut-off \
 valve for an active leak, or leaving the building for gas or smoke.
-- Never quote a price unless it appears in the pricing notes below. Otherwise say the technician will \
-give an exact price on site.
+- Answer the caller's questions (prices, hours, services, service area) using ONLY the shop facts below, \
+then steer back to getting them booked. When asked about cost, say the pricing notes in plain words, \
+exactly as written. If something isn't in the shop facts, don't guess: say the team will confirm it \
+when they call back. Never make up prices, discounts, warranties, brands, or timeframes.
 - Never promise an exact arrival time; appointments are arrival windows.
 - If someone is selling something, asking for a job, or is clearly spam, politely end the call.
 - {booking_rule}
@@ -134,13 +136,40 @@ give an exact price on site.
 weather, anyone vulnerable at risk): safety instructions first, then use transfer_to_owner right away.
 - Before you end the call, tell the caller what happens next and say goodbye, then call end_call.
 
-Shop details:
-- Service area: {shop['service_area'] or 'ask the owner; if unsure, take the details and say the shop will confirm'}
+Shop facts (the only facts you may state about the shop):
+- Business: {shop['name']}, {trade}
+- Office hours: {format_hours(shop)} ({shop['timezone'].split('/')[-1].replace('_', ' ')} time). \
+You answer calls around the clock; outside these hours, book the next open window or, for emergencies, transfer.
+- Service area: {shop['service_area'] or 'not listed; take the details and say the team will confirm'}
 - Services: {shop['services'] or f'general {trade} repair and installation'}
-- Pricing notes: {shop['pricing_notes'] or 'none; do not quote prices'}
+- Pricing: {shop['pricing_notes'] or 'no prices listed; say the technician gives an exact price on site'}
+- Appointments: {window_label(shop['slot_minutes'])} arrival windows
 - Owner: {shop['owner_name'] or 'the owner'}
-{('- Extra instructions from the owner: ' + shop['extra_instructions']) if shop['extra_instructions'] else ''}
+{('- Owner instructions (follow these): ' + shop['extra_instructions']) if shop['extra_instructions'] else ''}
 """
+
+
+DAY_NAMES = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday",
+             "sat": "Saturday", "sun": "Sunday"}
+
+
+def _t(hhmm: str) -> str:
+    h, m = (int(x) for x in hhmm.split(":"))
+    suffix = "AM" if h < 12 else "PM"
+    h = h % 12 or 12
+    return f"{h}{':%02d' % m if m else ''} {suffix}"
+
+
+def window_label(minutes: int) -> str:
+    return f"{minutes // 60}-hour" if minutes % 60 == 0 else f"{minutes}-minute"
+
+
+def format_hours(shop: sqlite3.Row) -> str:
+    hours = db.business_hours(shop) or db.DEFAULT_HOURS
+    parts = [f"{DAY_NAMES[d]} {_t(v[0])} to {_t(v[1])}" for d, v in hours.items() if d in DAY_NAMES]
+    closed = [DAY_NAMES[d] for d in DAY_NAMES if d not in hours]
+    text = "; ".join(parts) or "not listed"
+    return text + (f"; closed {', '.join(closed)}" if closed else "")
 
 
 def greeting(shop: sqlite3.Row) -> str:
