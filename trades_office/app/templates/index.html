@@ -8,6 +8,28 @@
   <div class="stat"><b>{{ trials }}</b><span>Shops on trial</span></div>
 </div>
 <div class="card">
+  <h2>Trial signups from the website</h2>
+  {% if not leads %}<p class="muted">No new signups. They appear here as soon as someone fills in the form on the home page.</p>{% else %}
+  <table>
+    <tr><th>When</th><th>Who</th><th>Trade / city</th><th>Calls/week</th><th>Note</th><th></th></tr>
+    {% for l in leads %}
+    <tr>
+      <td>{{ l.created_at[:16].replace("T"," ") }}</td>
+      <td><b>{{ l.shop_name }}</b><div>{{ l.name }} · {{ l.phone|phone }}</div><div class="muted">{{ l.email }}</div></td>
+      <td>{{ l.trade }}<div class="muted">{{ l.city }}</div></td>
+      <td>{{ l.calls_per_week }}</td>
+      <td class="muted">{{ l.message }}</td>
+      <td style="white-space:nowrap">
+        <span class="pill {{ 'pending' if l.status == 'new' else 'open' }}">{{ l.status }}</span><br><br>
+        <a class="btn" href="/admin/shops/new?lead={{ l.id }}">Set up shop</a>
+        {% if l.status == "new" %}<form class="inline" method="post" action="/admin/leads/{{ l.id }}/contacted"><button class="secondary">Called</button></form>{% endif %}
+        <form class="inline" method="post" action="/admin/leads/{{ l.id }}/lost"><button class="secondary">Not a fit</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>{% endif %}
+</div>
+<div class="card">
   <h2>Shops (last 7 days)</h2>
   {% if not rows %}<p class="muted">No shops yet. <a href="/admin/shops/new">Onboard your first shop</a>.</p>{% else %}
   <table>

@@ -2,21 +2,23 @@
 {% block content %}
 <h1>{{ "Edit " ~ shop.name if shop else "Onboard a new shop" }}</h1>
 <p class="muted">Fill this in during the setup call. Everything here shapes what the assistant says.</p>
+{% set v = shop or prefill %}
 <form method="post" action="{{ '/admin/shops/' ~ shop.id if shop else '/admin/shops' }}">
+{% if prefill %}<input type="hidden" name="lead_id" value="{{ prefill.lead_id }}"><p class="muted">Pre-filled from website signup #{{ prefill.lead_id }}.</p>{% endif %}
 <div class="card"><h2>The shop</h2>
   <div class="row">
-    <div><label>Shop name</label><input name="name" required value="{{ shop.name if shop }}"></div>
+    <div><label>Shop name</label><input name="name" required value="{{ v.name if v }}"></div>
     <div><label>Trade</label><select name="trade">
-      {% for t in ["plumbing","hvac","electrical"] %}<option {{ "selected" if shop and shop.trade==t }}>{{ t }}</option>{% endfor %}</select></div>
-    <div><label>Owner name</label><input name="owner_name" value="{{ shop.owner_name if shop }}"></div>
-    <div><label>Owner cell (transfers + summaries)</label><input name="owner_phone" required value="{{ shop.owner_phone if shop }}"></div>
+      {% for t in ["plumbing","hvac","electrical"] %}<option {{ "selected" if v and v.trade==t }}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label>Owner name</label><input name="owner_name" value="{{ v.owner_name if v }}"></div>
+    <div><label>Owner cell (transfers + summaries)</label><input name="owner_phone" required value="{{ v.owner_phone if v }}"></div>
     <div><label>Assistant phone number (Twilio)</label><input name="twilio_number" value="{{ shop.twilio_number or '' if shop }}"></div>
     <div><label>Time zone</label><input name="timezone" value="{{ shop.timezone if shop else 'America/Chicago' }}"></div>
   </div>
-  <label>Service area (towns, zip codes, radius)</label><input name="service_area" value="{{ shop.service_area if shop }}">
+  <label>Service area (towns, zip codes, radius)</label><input name="service_area" value="{{ v.service_area if v }}">
   <label>Services offered</label><textarea name="services">{{ shop.services if shop }}</textarea>
   <label>Pricing the assistant may quote (e.g. "$89 service call, waived if we do the repair")</label><textarea name="pricing_notes">{{ shop.pricing_notes if shop }}</textarea>
-  <label>Extra instructions (brands you don't service, jobs you don't take, how to handle warranties)</label><textarea name="extra_instructions">{{ shop.extra_instructions if shop }}</textarea>
+  <label>Extra instructions (brands you don't service, jobs you don't take, how to handle warranties)</label><textarea name="extra_instructions">{{ v.extra_instructions if v }}</textarea>
   <label>Extra emergency keywords (comma separated, on top of the built-in gas/CO/flood rules)</label><input name="emergency_keywords" value="{{ shop.emergency_keywords if shop }}">
 </div>
 <div class="card"><h2>Schedule</h2>

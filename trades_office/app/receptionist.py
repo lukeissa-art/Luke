@@ -175,6 +175,7 @@ class Receptionist:
         self.call_id = call["id"]
         self.caller_phone = call["caller_phone"]
         self.is_demo = call["call_sid"].startswith("demo-")
+        self.is_public_demo = call["call_sid"].startswith("demo-web-")
         self.messages: list[dict[str, Any]] = json.loads(call["messages"])
         self.transcript: list[dict[str, str]] = json.loads(call["transcript"])
         self.client = client or _client()
@@ -378,6 +379,8 @@ class Receptionist:
         if call["is_emergency"]:
             return
         db.update(self.conn, "calls", self.call_id, {"is_emergency": 1})
+        if self.is_public_demo:
+            return
         sms.send(
             self.conn,
             self.shop,

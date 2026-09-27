@@ -49,20 +49,44 @@ def overview(request: Request):
     now = db.utcnow()
     with db.session() as conn:
         shops = conn.execute("SELECT * FROM shops ORDER BY created_at DESC").fetchall()
+        leads = conn.execute("SELECT * FROM leads WHERE status IN ('new', 'contacted') "
+                             "ORDER BY created_at DESC LIMIT 50").fetchall()
         rows = []
         for shop in shops:
             st = reports.stats(conn, shop, now - timedelta(days=7), now)
             rows.append({"shop": shop, "stats": st, "plan": get_plan(shop["plan"])})
     mrr = sum(r["plan"].monthly_price for r in rows if r["shop"]["status"] == "active")
     trials = sum(1 for r in rows if r["shop"]["status"] == "trial")
-    return _render(request, "index.html", rows=rows, mrr=mrr, arr=mrr * 12, trials=trials,
+    return _render(request, "index.html", rows=rows, leads=leads, mrr=mrr, arr=mrr * 12, trials=trials,
                    active=sum(1 for r in rows if r["shop"]["status"] == "active"),
                    goal_shops=60)
 
 
+TRADES = {"plumbing": "plumbing", "hvac": "hvac", "plumbing & hvac": "hvac", "electrical": "electrical"}
+
+
 @router.get("/shops/new", response_class=HTMLResponse)
-def new_shop(request: Request):
-    return _render(request, "shop_form.html", shop=None, hours=db.DEFAULT_HOURS, plans=PLANS, days=DAYS)
+def new_shop(request: Request, lead: int = 0):
+    prefill = None
+    if lead:
+        with db.session() as conn:
+            row = db.get(conn, "leads", lead)
+        if row:
+            prefill = {"lead_id": row["id"], "name": row["shop_name"], "owner_name": row["name"],
+                       "owner_phone": row["phone"], "trade": TRADES.get(row["trade"].lower(), "plumbing"),
+                       "service_area": row["city"], "extra_instructions": row["message"]}
+    return _render(request, "shop_form.html", shop=None, prefill=prefill, hours=db.DEFAULT_HOURS,
+                   plans=PLANS, days=DAYS)
+
+
+@router.post("/leads/{lead_id}/{status}")
+def set_lead_status(lead_id: int, status: str):
+    if status not in ("contacted", "lost"):
+        _404()
+    with db.session() as conn:
+        db.get(conn, "leads", lead_id) or _404()
+        db.update(conn, "leads", lead_id, {"status": status})
+    return RedirectResponse("/admin/", status_code=303)
 
 
 def _shop_values(form) -> dict:
@@ -84,11 +108,14 @@ def _shop_values(form) -> dict:
 
 @router.post("/shops")
 async def create_shop(request: Request):
-    values = _shop_values(await request.form())
+    form = await request.form()
+    values = _shop_values(form)
     now = db.utcnow()
     values.update(status="trial", trial_ends_at=db.iso(now + timedelta(days=TRIAL_DAYS)), created_at=db.iso(now))
     with db.session() as conn:
         shop_id = db.insert(conn, "shops", values)
+        if str(form.get("lead_id") or "").isdigit():
+            db.update(conn, "leads", int(form["lead_id"]), {"status": "converted", "shop_id": shop_id})
     return RedirectResponse(f"/admin/shops/{shop_id}", status_code=303)
 
 

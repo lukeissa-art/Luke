@@ -65,3 +65,23 @@ def send(
         },
     )
     return True
+
+
+def alert_founder(conn: sqlite3.Connection, body: str) -> bool:
+    """Company-level alert (e.g. a new trial signup) to the founder's cell."""
+    s = get_settings()
+    if not s.founder_phone:
+        log.info("[founder alert] %s", body)
+        return False
+    if s.twilio_enabled and s.company_sms_number:
+        try:
+            _twilio().messages.create(to=s.founder_phone, from_=s.company_sms_number, body=body)
+        except Exception:
+            log.exception("Founder alert failed")
+            return False
+    else:
+        log.info("[dry-run founder alert] -> %s: %s", s.founder_phone, body)
+    db.insert(conn, "sms_log", {"shop_id": None, "direction": "outbound", "to_phone": s.founder_phone,
+                                "from_phone": s.company_sms_number, "body": body,
+                                "created_at": db.iso(db.utcnow())})
+    return True

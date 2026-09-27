@@ -115,6 +115,21 @@ CREATE TABLE IF NOT EXISTS sms_log (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    shop_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    trade TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    calls_per_week TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'new',
+    shop_id INTEGER REFERENCES shops(id),
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_calls_shop ON calls(shop_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_appts_shop ON appointments(shop_id, start_at);
 CREATE INDEX IF NOT EXISTS idx_followups_due ON followups(status, send_at);

@@ -1,0 +1,448 @@
+{% if not fragment %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="An AI receptionist for plumbing and HVAC shops. Answers every call in your shop's name, books jobs, and texts you the details. Set up for you. Flat monthly price.">
+{% endif %}<title>{{ company }}</title>
+{% include "site/_style.html" %}
+<style>
+  .hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 56px; align-items: center; padding-block: 64px 72px; }
+  .hero-copy { display: grid; gap: 24px; justify-items: start; }
+  .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+  .fine { font-size: 14px; color: var(--muted); }
+
+  /* the work order */
+  .ticket { background: var(--surface); border: 2px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); position: relative; }
+  .ticket-head { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 2px dashed var(--line);
+                 font: 500 12px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); flex-wrap: wrap; }
+  .ticket-head b { color: var(--alert); font-weight: 500; }
+  .lines { padding: 14px 16px 18px; display: grid; gap: 10px; font-size: 15px; line-height: 1.45; }
+  .line { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; }
+  .line .who { font: 500 11px/1.9 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .line.ai p { color: var(--ink); }
+  .line.caller p { color: var(--muted); font-style: italic; }
+  .stamp { position: absolute; right: -14px; top: -22px; transform: rotate(-9deg); border: 3px solid var(--ok); color: var(--ok);
+           font: 900 24px/1 var(--display); letter-spacing: 0.06em; padding: 8px 12px 6px; text-transform: uppercase; background: var(--surface);
+           animation: thunk 0.5s 0.6s ease-out both; }
+  .stamp small { display: block; font: 500 11px/1.4 var(--mono); letter-spacing: 0.04em; }
+  @keyframes thunk { from { transform: rotate(-9deg) scale(1.35); } to { transform: rotate(-9deg) scale(1); } }
+  .sms { margin: 0 16px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 12px 14px; font-size: 14px; line-height: 1.45; }
+  .sms .eyebrow { display: block; margin-bottom: 4px; font-size: 11px; }
+
+  section.band { padding-block: 72px; border-top: 2px solid var(--ink); }
+  .section-head { display: grid; gap: 14px; margin-bottom: 40px; max-width: 46em; }
+
+  /* the math */
+  .math { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 2px solid var(--ink); background: var(--surface); }
+  .math > div { padding: 26px 24px; display: grid; gap: 8px; align-content: start; }
+  .math > div + div { border-left: 2px solid var(--ink); }
+  .math strong { font: 900 clamp(40px, 5vw, 60px)/1 var(--display); font-variant-numeric: tabular-nums; }
+  .math .op { color: var(--muted); }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; counter-reset: step; }
+  .step { display: grid; gap: 10px; align-content: start; padding-top: 18px; border-top: 6px solid var(--hi); }
+  .step .n { font: 500 13px/1 var(--mono); color: var(--muted); letter-spacing: 0.08em; }
+  .step p { color: var(--muted); }
+
+  /* call handling */
+  .handles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+  .checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .checklist li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; }
+  .checklist li::before { content: ""; width: 14px; height: 14px; margin-top: 6px; background: var(--hi); border: 2px solid var(--ink); }
+  .checklist b { display: block; }
+  .rules { border: 2px solid var(--alert); background: var(--surface); }
+  .rules h3 { color: var(--alert); padding: 16px 18px 6px; font-size: 24px; }
+  .rules > p { padding: 0 18px 12px; color: var(--muted); font-size: 15px; }
+  .rules table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .rules th, .rules td { text-align: left; padding: 10px 18px; border-top: 1px solid var(--line); vertical-align: top; }
+  .rules th { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+  /* demo */
+  .demo { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 40px; align-items: start; }
+  .phone { background: var(--surface); border: 2px solid var(--ink); border-radius: 22px; overflow: hidden; box-shadow: 8px 8px 0 var(--ink); }
+  .phone-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--ink); color: var(--paper);
+               font: 500 13px/1.3 var(--mono); gap: 10px; flex-wrap: wrap; }
+  .phone-bar .live { display: inline-flex; align-items: center; gap: 6px; }
+  .phone-bar .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--hi); }
+  .chat { height: 340px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 15px; line-height: 1.45; }
+  .msg.ai { background: var(--paper); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg.you { background: var(--hi); color: var(--on-hi); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.sys { align-self: center; font: 500 12px/1.4 var(--mono); color: var(--muted); background: none; padding: 2px; text-align: center; }
+  .chat-form { display: flex; gap: 8px; padding: 12px; border-top: 2px solid var(--ink); }
+  .chat-form input { flex: 1; min-width: 0; }
+  .prompts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chip { font: 500 13px/1.2 var(--body); border: 1px solid var(--ink); background: var(--surface); color: var(--ink); border-radius: 99px; padding: 8px 12px; cursor: pointer; }
+  .chip:hover { background: var(--hi); color: var(--on-hi); }
+
+  /* pricing */
+  .plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+  .plan { background: var(--surface); border: 2px solid var(--line); padding: 26px 24px; display: grid; gap: 16px; grid-template-rows: auto auto auto 1fr auto; }
+  .plan.pick { border-color: var(--ink); box-shadow: 8px 8px 0 var(--ink); }
+  .plan .tag { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); min-height: 12px; }
+  .plan.pick .tag { color: var(--ink); }
+  .price { font: 900 60px/1 var(--display); font-variant-numeric: tabular-nums; }
+  .price small { font: 500 16px/1 var(--body); color: var(--muted); }
+  .plan ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 15px; align-content: start; }
+  .plan li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; }
+  .plan li::before { content: "✓"; font-weight: 700; color: var(--ok); }
+  .plan li.no { color: var(--muted); }
+  .plan li.no::before { content: "–"; color: var(--muted); }
+  .plan .btn { justify-content: center; }
+  .price-note { margin-top: 20px; color: var(--muted); font-size: 15px; }
+
+  /* comparison */
+  .compare-wrap { overflow-x: auto; border: 2px solid var(--ink); background: var(--surface); }
+  .compare { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 15px; }
+  .compare th, .compare td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .compare thead th { font: 500 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .compare td:first-child { font-weight: 600; }
+  .compare tr.us td { background: color-mix(in srgb, var(--hi) 22%, var(--surface)); }
+
+  /* trial form */
+  .trial { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 48px; align-items: start; }
+  .trial-list { display: grid; gap: 10px; margin-top: 8px; padding-left: 20px; }
+  form.lead { background: var(--surface); border: 2px solid var(--ink); padding: 26px; display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  form.lead .full { grid-column: 1 / -1; }
+  .field { display: grid; gap: 6px; }
+  label { font-weight: 600; font-size: 14px; }
+  label .opt { color: var(--muted); font-weight: 400; }
+  input, select, textarea { font: 16px/1.4 var(--body); padding: 12px; border: 2px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); width: 100%; }
+  input:focus, select:focus, textarea:focus { border-color: var(--ink); }
+  textarea { min-height: 88px; resize: vertical; }
+  .err { color: var(--alert); font-size: 14px; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .done { border: 2px solid var(--ok); background: var(--surface); padding: 26px; display: grid; gap: 10px; }
+  .done h3 { color: var(--ok); }
+
+  /* faq */
+  .faq { display: grid; gap: 0; border-top: 2px solid var(--ink); max-width: 52em; }
+  .faq details { border-bottom: 1px solid var(--line); padding: 18px 0; }
+  .faq summary { cursor: pointer; font-weight: 700; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  .faq summary::after { content: "+"; font: 800 24px/1 var(--display); }
+  .faq details[open] summary::after { content: "–"; }
+  .faq details p { margin-top: 10px; color: var(--muted); max-width: 44em; }
+
+  @media (max-width: 900px) {
+    .hero, .handles, .demo, .trial { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+    .plans, .steps { grid-template-columns: minmax(0, 1fr); }
+    .plan.pick { order: -1; }
+  }
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .math { grid-template-columns: minmax(0, 1fr); }
+    .math > div + div { border-left: 0; border-top: 2px solid var(--ink); }
+    form.lead { grid-template-columns: minmax(0, 1fr); padding: 18px; }
+    .top nav a:not(.btn) { display: none; }
+    .stamp { font-size: 20px; right: -4px; }
+  }
+</style>
+{% if not fragment %}</head>
+<body>{% endif %}
+
+{% include "site/_header.html" %}
+
+<main>
+<section class="hero wrap" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <p class="eyebrow">For plumbing &amp; HVAC shops · {{ region }}</p>
+    <h1 id="hero-title">The phone rings at 9:47&nbsp;PM. <mark>Someone answers.</mark></h1>
+    <p class="lede">An AI receptionist that picks up in your shop's name, books the job into your calendar, and texts you the details. We set it up for you in one visit. One flat monthly price.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-hi" href="#trial">Start a {{ trial_days }}-day free trial</a>
+      <a class="btn btn-ghost" href="#demo">Hear it take a call</a>
+    </div>
+    <p class="fine">The trial covers after-hours calls only, so nothing changes during your workday. No card needed.</p>
+  </div>
+
+  <figure class="ticket" aria-label="Example: an after-hours call the assistant booked">
+    <div class="ticket-head"><span>Riverside Plumbing · incoming call</span><b>Tue 9:47 PM · after hours</b></div>
+    <div class="lines">
+      <div class="line ai"><span class="who">Asst</span><p>Thanks for calling Riverside Plumbing. How can I help?</p></div>
+      <div class="line caller"><span class="who">Caller</span><p>Our water heater's leaking all over the garage.</p></div>
+      <div class="line ai"><span class="who">Asst</span><p>Sorry about that. If you can, turn the cold valve on top of the heater to off. What's the address?</p></div>
+      <div class="line caller"><span class="who">Caller</span><p>12 Oak Street, Austin.</p></div>
+      <div class="line ai"><span class="who">Asst</span><p>I can get a tech out tomorrow between 8 and 10 AM. Want that?</p></div>
+    </div>
+    <div class="stamp" aria-hidden="true">Booked<small>WED 8–10 AM</small></div>
+    <div class="sms"><span class="eyebrow">Text to the owner · 9:51 PM</span>BOOKED: Ann Lee (512) 555-0142 · 12 Oak St, Austin · Water heater leaking in garage · Wed 8–10 AM</div>
+  </figure>
+</section>
+
+<section class="band wrap" aria-labelledby="math-title">
+  <div class="section-head">
+    <p class="eyebrow">The math</p>
+    <h2 id="math-title">A missed call is a job for the next shop on Google</h2>
+    <p class="lede">When you're on a ladder, calls go to voicemail. Most people who reach voicemail don't leave a message. They call someone else.</p>
+  </div>
+  <div class="math">
+    <div><span class="eyebrow">One missed emergency call</span><strong>$300–1,500</strong><span class="op">in lost work</span></div>
+    <div><span class="eyebrow">The Pro plan</span><strong>${{ plans.pro.monthly_price }}</strong><span class="op">a month, flat</span></div>
+    <div><span class="eyebrow">Break-even</span><strong>1 job</strong><span class="op">booked a month pays for it</span></div>
+  </div>
+</section>
+
+<section class="band wrap" id="how" aria-labelledby="how-title">
+  <div class="section-head">
+    <p class="eyebrow">How it works</p>
+    <h2 id="how-title">Set up in one visit. Running that night.</h2>
+  </div>
+  <div class="steps">
+    <div class="step"><span class="n">STEP 1 · 2 HOURS</span><h3>We set it up with you</h3><p>We sit down with you and learn your services, service area, prices you're happy to quote, and what counts as an emergency. Then we test it together until it sounds like your shop.</p></div>
+    <div class="step"><span class="n">STEP 2 · 5 MINUTES</span><h3>Forward your calls</h3><p>Forward after-hours and missed calls to your new line. Keep your number, your phone and your software. Turn it off anytime by texting PAUSE.</p></div>
+    <div class="step"><span class="n">STEP 3 · EVERY CALL</span><h3>It answers, books, follows up</h3><p>You get a text after every call. Callers who didn't book get a follow-up text, and finished jobs get a Google review request.</p></div>
+  </div>
+</section>
+
+<section class="band wrap" aria-labelledby="handles-title">
+  <div class="section-head">
+    <p class="eyebrow">On every call</p>
+    <h2 id="handles-title">It sounds like your office, and knows when to get you</h2>
+  </div>
+  <div class="handles">
+    <ul class="checklist">
+      <li><div><b>Answers in your shop's name, 24/7</b>Nights, weekends, and when you're under a sink. Callers hear right away that it's your virtual assistant.</div></li>
+      <li><div><b>Gets the details you'd ask for</b>Name, callback number, address and the problem, with the address and number read back to confirm.</div></li>
+      <li><div><b>Books real arrival windows</b>Only open times from your calendar, and the customer gets a confirmation text.</div></li>
+      <li><div><b>Sticks to your prices</b>It quotes your service-call fee if you want it to. Everything else gets "the tech will price it on site."</div></li>
+      <li><div><b>Follows up so jobs don't slip</b>Text-backs for callers who didn't book, nudges on open quotes, and review requests after the job.</div></li>
+      <li><div><b>Shows you what it caught</b>A weekly text with calls answered, jobs booked and the work it brought in.</div></li>
+    </ul>
+    <div class="rules">
+      <h3>Emergencies aren't left to the AI</h3>
+      <p>Fixed rules run on every sentence before the AI replies.</p>
+      <table>
+        <thead><tr><th>Caller says</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>Gas smell, carbon monoxide alarm</td><td>Tells them to get outside and call 911 or the gas company, then puts them through to your cell</td></tr>
+          <tr><td>Sparks, smoke, burning smell</td><td>Safety instructions, then straight to your cell</td></tr>
+          <tr><td>Flooding, burst pipe, sewage, no heat</td><td>You get an URGENT text, and it offers to connect them to you</td></tr>
+          <tr><td>Anything it can't handle</td><td>Takes a message or transfers. If the AI ever fails, the call goes to you.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="band wrap" id="demo" aria-labelledby="demo-title">
+  <div class="demo">
+    <div class="section-head" style="margin-bottom:0">
+      <p class="eyebrow">Try it</p>
+      <h2 id="demo-title">Be the customer</h2>
+      <p class="lede">This is the real assistant for our demo shop, Riverside Plumbing &amp; Heating. Describe a problem and try to book a visit. Try a gas smell too.</p>
+      {% if demo_phone %}<p>Prefer a real phone call? Dial the demo line: <b style="font-family:var(--mono)">{{ demo_phone }}</b></p>{% endif %}
+      <div class="prompts" aria-label="Example things to say">
+        <button class="chip" type="button">My kitchen sink is backing up</button>
+        <button class="chip" type="button">Water heater is leaking, can someone come tomorrow?</button>
+        <button class="chip" type="button">How much is a service call?</button>
+        <button class="chip" type="button">I smell gas in the basement</button>
+      </div>
+    </div>
+    <div class="phone">
+      <div class="phone-bar"><span class="live">Riverside Plumbing &amp; Heating</span><span id="demo-status">demo line</span></div>
+      <div class="chat" id="chat" aria-live="polite">
+        <div class="msg ai">Thanks for calling Riverside Plumbing &amp; Heating. This call may be recorded. I'm the shop's virtual assistant. How can I help you today?</div>
+      </div>
+      <form class="chat-form" id="chat-form">
+        <label for="chat-input" class="hp">What you say</label>
+        <input id="chat-input" autocomplete="off" maxlength="300" placeholder="Type what you'd say on the phone…">
+        <button class="btn btn-hi" type="submit" style="padding:12px 16px;box-shadow:none">Say</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="band wrap" id="pricing" aria-labelledby="pricing-title">
+  <div class="section-head">
+    <p class="eyebrow">Pricing</p>
+    <h2 id="pricing-title">One flat price. No per-minute bills.</h2>
+    <p class="lede">Month to month. Cancel anytime. Every plan includes hands-on setup and a real person to call.</p>
+  </div>
+  <div class="plans">
+    {% for key, p in plans.items() %}
+    <div class="plan {{ 'pick' if key == 'pro' }}">
+      <span class="tag">{{ {"starter": "After hours only", "pro": "Most shops pick this", "plus": "Busy shops & HVAC agreements"}[key] }}</span>
+      <h3>{{ p.name }}</h3>
+      <div class="price">${{ p.monthly_price }}<small> /month</small></div>
+      <ul>
+        <li>Up to {{ p.monthly_call_cap }} calls a month</li>
+        <li>{{ "Answers 24/7" if p.answers_24_7 else "After-hours and missed calls" }}</li>
+        <li>Text summary of every call</li>
+        <li>Emergency transfer to your cell</li>
+        <li class="{{ '' if p.booking else 'no' }}">Books into your calendar</li>
+        <li class="{{ '' if p.followups else 'no' }}">Follow-up texts to callers</li>
+        <li class="{{ '' if p.review_requests else 'no' }}">Google review requests</li>
+        <li class="{{ '' if p.quote_followups else 'no' }}">Quote follow-ups</li>
+        <li class="{{ '' if p.maintenance_reminders else 'no' }}">Maintenance reminders</li>
+      </ul>
+      <a class="btn {{ 'btn-hi' if key == 'pro' else 'btn-ghost' }}" href="#trial" data-plan="{{ key }}">Start free trial</a>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="price-note">${{ setup_fee }} one-time setup, <b>waived for our first 10 shops</b> in exchange for a testimonial. Over your call limit, calls ring straight through to you. Nothing is cut off.</p>
+</section>
+
+<section class="band wrap" aria-labelledby="compare-title">
+  <div class="section-head">
+    <p class="eyebrow">Compared with</p>
+    <h2 id="compare-title">Built for trades, set up by a person</h2>
+  </div>
+  <div class="compare-wrap">
+    <table class="compare">
+      <thead><tr><th></th><th>Price</th><th>Books jobs</th><th>Knows your trade</th><th>Setup</th></tr></thead>
+      <tbody>
+        <tr class="us"><td>{{ company }}</td><td>Flat ${{ plans.starter.monthly_price }}–{{ plans.plus.monthly_price }}/mo</td><td>Yes, into your calendar</td><td>Tuned to your services, prices and emergencies</td><td>Done for you, in person</td></tr>
+        <tr><td>Answering service</td><td>Per minute, adds up fast</td><td>Sometimes</td><td>Operators read a script</td><td>Forms and calls</td></tr>
+        <tr><td>Field-service software AI</td><td>Add-on to your software bill</td><td>Yes</td><td>Generic</td><td>Self-serve</td></tr>
+        <tr><td>Voicemail</td><td>Free</td><td>No</td><td>No</td><td>None, and the calls go elsewhere</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="band wrap" id="trial" aria-labelledby="trial-title">
+  <div class="trial">
+    <div class="section-head" style="margin-bottom:0">
+      <p class="eyebrow">{{ trial_days }}-day free trial</p>
+      <h2 id="trial-title">See what it catches before you pay a cent</h2>
+      <ul class="trial-list">
+        <li>We call you within one business day to set up a time.</li>
+        <li>For {{ trial_days }} days it answers your after-hours calls only.</li>
+        <li>At the end we sit down and go through every call it caught and every job it booked.</li>
+        <li>If it didn't pay for itself, we switch it off. No card, no contract.</li>
+      </ul>
+    </div>
+    <div id="trial-box">
+      <form class="lead" id="lead-form" method="post" action="/trial" novalidate>
+        <div class="field"><label for="f-name">Your name</label><input id="f-name" name="name" autocomplete="name" required value="{{ form.name if form }}">{% if errors and errors.name %}<span class="err">{{ errors.name }}</span>{% endif %}</div>
+        <div class="field"><label for="f-shop">Shop name</label><input id="f-shop" name="shop_name" autocomplete="organization" required value="{{ form.shop_name if form }}">{% if errors and errors.shop_name %}<span class="err">{{ errors.shop_name }}</span>{% endif %}</div>
+        <div class="field"><label for="f-phone">Cell phone</label><input id="f-phone" name="phone" type="tel" autocomplete="tel" required value="{{ form.phone if form }}">{% if errors and errors.phone %}<span class="err">{{ errors.phone }}</span>{% endif %}</div>
+        <div class="field"><label for="f-email">Email <span class="opt">(optional)</span></label><input id="f-email" name="email" type="email" autocomplete="email" value="{{ form.email if form }}">{% if errors and errors.email %}<span class="err">{{ errors.email }}</span>{% endif %}</div>
+        <div class="field"><label for="f-trade">Trade</label><select id="f-trade" name="trade">
+          {% for t in ["Plumbing", "HVAC", "Plumbing & HVAC", "Electrical", "Other"] %}<option {{ "selected" if form and form.trade == t }}>{{ t }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="f-city">City</label><input id="f-city" name="city" autocomplete="address-level2" value="{{ form.city if form }}"></div>
+        <div class="field full"><label for="f-calls">About how many calls a week?</label><select id="f-calls" name="calls_per_week">
+          {% for c in ["Under 20", "20–50", "50–100", "100–150", "150+", "Not sure"] %}<option {{ "selected" if form and form.calls_per_week == c }}>{{ c }}</option>{% endfor %}</select></div>
+        <div class="field full"><label for="f-msg">Anything we should know? <span class="opt">(optional)</span></label><textarea id="f-msg" name="message" placeholder="e.g. we miss a lot of calls on Saturdays">{{ form.message if form }}</textarea></div>
+        <div class="hp" aria-hidden="true"><label for="f-website">Website</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
+        <div class="full" style="display:grid;gap:10px">
+          <button class="btn btn-hi" type="submit" style="justify-content:center">Start my free trial</button>
+          <span class="err" id="form-error" hidden></span>
+          <p class="fine">We'll only use your number to set up your trial. See our {% if fragment %}privacy policy{% else %}<a href="/privacy">privacy policy</a>{% endif %}.</p>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="band wrap" id="faq" aria-labelledby="faq-title">
+  <div class="section-head"><p class="eyebrow">Questions</p><h2 id="faq-title">What owners ask us</h2></div>
+  <div class="faq">
+    <details><summary>Will my customers know it's AI?</summary><p>Yes. It introduces itself as your shop's virtual assistant and says the call may be recorded. Most callers care that someone picked up and they got on the schedule. The alternative is voicemail, and most people won't leave one.</p></details>
+    <details><summary>What if it gets something wrong?</summary><p>Emergencies run on fixed rules and go straight to your cell. It only offers open times from your calendar and only quotes prices you've approved. We read transcripts every week and adjust the setup. If anything on our end fails, the call rings through to you.</p></details>
+    <details><summary>Do I need a new phone number?</summary><p>No. You keep your number. We give you a line to forward calls to, either all of them or just after-hours and missed calls.</p></details>
+    <details><summary>Does it work with my scheduling software?</summary><p>It books into Google Calendar today, or into its own built-in schedule. Jobber and Housecall Pro are next on our list. If you use something else, tell us on the trial form.</p></details>
+    <details><summary>What happens if I go over my call limit?</summary><p>Calls ring straight through to you like they do today. Nothing gets cut off, and we'll talk about whether a bigger plan makes sense.</p></details>
+    <details><summary>Is there a contract?</summary><p>No. It's month to month and you can cancel anytime. You can also text PAUSE to switch it off for a day, or for the slow season.</p></details>
+    <details><summary>Is recording calls legal where I am?</summary><p>Every call opens with a recording notice, which is the standard approach. We store a text transcript, not audio. Talk to us if your state has specific rules you're worried about.</p></details>
+  </div>
+</section>
+</main>
+
+{% include "site/_footer.html" %}
+
+<script>
+(function () {
+  const PREVIEW = {{ "true" if fragment else "false" }};
+  const LIVE_DEMO = {{ "true" if live_demo else "false" }};
+
+  // --- trial form ---
+  const form = document.getElementById("lead-form");
+  const formError = document.getElementById("form-error");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    form.querySelectorAll(".err:not(#form-error)").forEach((el) => el.remove());
+    formError.hidden = true;
+    const data = new FormData(form);
+    const need = { name: "Add your name so we know who to ask for.", shop_name: "Add your shop's name.",
+                   phone: "Enter a 10-digit US phone number, like 512-555-0123." };
+    let bad = false;
+    for (const [field, msg] of Object.entries(need)) {
+      const v = String(data.get(field) || "").trim();
+      const digits = v.replace(/\D/g, "");
+      if (!v || (field === "phone" && !(digits.length === 10 || (digits.length === 11 && digits[0] === "1")))) {
+        const span = document.createElement("span"); span.className = "err"; span.textContent = msg;
+        form.elements[field].closest(".field").append(span); bad = true;
+      }
+    }
+    if (bad) return;
+    const done = (title, body) => {
+      const box = document.getElementById("trial-box");
+      box.innerHTML = '<div class="done" role="status"><h3></h3><p></p></div>';
+      box.querySelector("h3").textContent = title; box.querySelector("p").textContent = body;
+    };
+    if (PREVIEW) {
+      done("This is a preview", "The form checked out. On the live site this signup is saved to your dashboard and you get a text about it.");
+      return;
+    }
+    try {
+      const r = await fetch("/trial", { method: "POST", body: data, headers: { Accept: "application/json" } });
+      const d = await r.json();
+      if (d.ok) {
+        done("You're on the list", "Thanks, " + String(data.get("name")).split(" ")[0] + ". We'll call you within one business day to set up your free trial.");
+      } else if (d.errors) {
+        for (const [field, msg] of Object.entries(d.errors)) {
+          const span = document.createElement("span"); span.className = "err"; span.textContent = msg;
+          form.elements[field].closest(".field").append(span);
+        }
+      } else { throw new Error(); }
+    } catch (err) {
+      formError.textContent = "That didn't go through. Check your connection and try again, or email {{ contact_email }}.";
+      formError.hidden = false;
+    }
+  });
+  document.querySelectorAll("[data-plan]").forEach((a) => a.addEventListener("click", () => {
+    const msg = document.getElementById("f-msg");
+    if (!msg.value) msg.value = "Interested in the " + a.dataset.plan.charAt(0).toUpperCase() + a.dataset.plan.slice(1) + " plan.";
+  }));
+
+  // --- live demo ---
+  const chat = document.getElementById("chat"), input = document.getElementById("chat-input");
+  const status = document.getElementById("demo-status");
+  let callId = null, busy = false, ended = false;
+  function add(kind, text) {
+    const div = document.createElement("div"); div.className = "msg " + kind; div.textContent = text;
+    chat.append(div); chat.scrollTop = chat.scrollHeight; return div;
+  }
+  async function say(text) {
+    if (busy || !text.trim()) return;
+    if (ended) { chat.querySelectorAll(".msg:not(:first-child)").forEach((m) => m.remove()); callId = null; ended = false; }
+    add("you", text); input.value = "";
+    if (PREVIEW || !LIVE_DEMO) {
+      add("sys", PREVIEW ? "This preview can't reach the assistant. On the live site it answers here in real time."
+                         : "The live demo is switched off right now. Start a free trial to hear it on your own calls.");
+      return;
+    }
+    busy = true; status.textContent = "assistant is talking…";
+    const wait = add("sys", "…");
+    try {
+      const r = await fetch("/demo/say", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ text, call_id: callId }) });
+      const d = await r.json(); wait.remove();
+      if (!r.ok) { add("sys", d.error || "The demo isn't available right now."); return; }
+      callId = d.call_id; add("ai", d.say);
+      if (d.action !== "continue") {
+        ended = true;
+        add("sys", d.action === "transfer" ? "Call transferred to the owner's cell. Type again to start a new call." : "Call ended. Type again to start a new call.");
+      }
+    } catch (err) { wait.remove(); add("sys", "Couldn't reach the assistant. Check your connection and try again."); }
+    finally { busy = false; status.textContent = "demo line"; }
+  }
+  document.getElementById("chat-form").addEventListener("submit", (e) => { e.preventDefault(); say(input.value); });
+  document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => say(c.textContent)));
+})();
+</script>
+{% if not fragment %}</body>
+</html>{% endif %}

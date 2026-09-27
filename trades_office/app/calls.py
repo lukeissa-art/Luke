@@ -48,6 +48,10 @@ def finalize_call(conn: sqlite3.Connection, call_id: int, *, status: str = "comp
     db.update(conn, "calls", call_id,
               {"ended_at": db.iso(now), "status": status, "outcome": outcome, "owner_notified": 1})
 
+    if call["call_sid"].startswith("demo-web-"):
+        # Website visitors trying the demo: free the slot, text nobody.
+        conn.execute("UPDATE appointments SET status = 'cancelled' WHERE call_id = ?", (call_id,))
+        return
     if call["call_sid"].startswith("demo-"):
         # Demo/test calls: show the owner text, but free the slot and skip customer follow-ups.
         conn.execute("UPDATE appointments SET status = 'cancelled' WHERE call_id = ?", (call_id,))

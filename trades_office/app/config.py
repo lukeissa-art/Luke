@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # Google Calendar (service account JSON, shared with each shop's calendar)
     google_service_account_file: str = ""
 
+    # Public website
+    contact_email: str = "hello@example.com"
+    founder_phone: str = ""  # gets a text for every new trial signup
+    company_sms_number: str = ""  # Twilio number the founder alerts are sent from
+    public_demo_shop_id: int = 0  # shop the website's "try it" demo talks to; 0 turns the demo off
+    demo_phone_number: str = ""  # optional real demo line shown on the website
+    service_region: str = "Central Texas"
+
     # Follow-up timing
     unbooked_followup_minutes: int = 15
     quote_followup_days: int = 2

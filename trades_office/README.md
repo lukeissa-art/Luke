@@ -17,6 +17,7 @@ texts that small shops never get around to. Flat monthly price. The business pla
 | **Weekly report**: calls answered, after-hours calls, jobs booked, estimated revenue captured | `app/reports.py` |
 | **Plans**: Starter $249 / Pro $449 / Plus $799, call caps, $500 setup fee, 14-day trial | `app/plans.py`, `app/billing.py` (Stripe) |
 | **Founder dashboard**: onboard shops on the setup call, watch calls and transcripts, mark jobs done, MRR vs the 60-shop goal | `app/admin.py`, `app/templates/` |
+| **Public website**: home page with the pitch, pricing, a live "be the customer" demo, a free-trial signup form that lands in your dashboard (and texts you), privacy policy and terms | `app/site.py`, `app/templates/site/` |
 | **Live demo for sales visits**: talk to a shop's assistant in the browser (typing or mic) | `/admin/shops/{id}/demo` |
 
 ### How a call works
@@ -45,6 +46,7 @@ python -m scripts.seed_demo     # creates "Riverside Plumbing & Heating"
 uvicorn app.main:app --reload
 ```
 
+- Website: http://localhost:8000/ (set `PUBLIC_DEMO_SHOP_ID=1` to switch on the live demo)
 - Dashboard: http://localhost:8000/admin/ (log in with ADMIN_USERNAME / ADMIN_PASSWORD)
 - Talk to the assistant in the terminal: `python -m scripts.simulate_call`
 - Or in the browser: open the shop, then **Test call in browser**
@@ -59,6 +61,13 @@ With Twilio left blank, texts are logged to the console and saved in the `sms_lo
 3. **Twilio**: buy one local number per shop. Set its Voice webhook to `POST {PUBLIC_BASE_URL}/voice/incoming`, its status callback to `{PUBLIC_BASE_URL}/voice/status`, and its Messaging webhook to `POST {PUBLIC_BASE_URL}/sms/incoming`. **Register for A2P 10DLC** before texting customers (see `docs/compliance.md`).
 4. **Stripe**: create three monthly prices (249, 449, 799) and set their IDs. Point a webhook at `{PUBLIC_BASE_URL}/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.payment_failed`.
 5. **Google Calendar** (optional, per shop): `pip install google-api-python-client google-auth`, create a service account, set `GOOGLE_SERVICE_ACCOUNT_FILE`, and have each shop share their calendar with the service account's email. Then set the shop's calendar to `google` in the dashboard.
+
+## The website
+
+- `/` home page, `/privacy`, `/terms`, `/thanks`. The privacy policy includes the SMS wording Twilio's A2P 10DLC review looks for.
+- **Trial signups** (`POST /trial`) are saved to the `leads` table, shown at the top of the dashboard, and texted to `FOUNDER_PHONE`. **Set up shop** on a signup pre-fills the onboarding form. The form works without JavaScript and has a hidden spam trap.
+- **Live demo** (`POST /demo/say`) talks to the shop set in `PUBLIC_DEMO_SHOP_ID`. Each message is one Claude call, so it's limited to 20 messages per visitor per hour and 16 turns per call. Demo calls never text anyone and their bookings are released right away.
+- Point your domain at the deployed app. Everything is served by the same process as the dashboard and phone webhooks.
 
 ## Company docs
 
