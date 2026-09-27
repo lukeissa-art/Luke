@@ -17,7 +17,7 @@
   <ul>
     <li><b>API key not valid / PERMISSION_DENIED / 403</b>: the key is wrong or was copied with a space. Re-paste it in Render → Environment.</li>
     <li><b>RESOURCE_EXHAUSTED / 429 / quota</b>: the free tier's limit was hit. Wait a minute, or turn on billing in Google AI Studio.</li>
-    <li><b>NOT_FOUND / 404 model</b>: the model isn't available on your key. Set <code>GEMINI_MODEL=gemini-2.5-flash</code> in Render → Environment.</li>
+    <li><b>NOT_FOUND / 404 model</b>: the model isn't available on your key. Set <code>GEMINI_MODEL</code> to the model Google names in the error (e.g. <code>gemini-3.8-flash</code>) in Render → Environment.</li>
     <li><b>MISSING key</b>: add <code>GEMINI_API_KEY</code> (or <code>ANTHROPIC_API_KEY</code>) in Render → Environment.</li>
   </ul>
 </div>

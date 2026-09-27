@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # AI model: "auto" uses Gemini when GEMINI_API_KEY is set, otherwise Claude.
     llm_provider: str = "auto"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
 
     # Claude
     anthropic_api_key: str = ""  # read by the Anthropic SDK from the environment too

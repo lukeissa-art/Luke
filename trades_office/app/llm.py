@@ -6,6 +6,7 @@ must finish on the backend it started with.
 """
 
 import json
+import re
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -90,7 +91,13 @@ class AnthropicBackend:
         }
 
 
-FALLBACK_GEMINI_MODEL = "gemini-2.5-flash"
+FALLBACK_GEMINI_MODEL = "gemini-3.8-flash"
+
+
+def _suggested_model(exc: Exception) -> str | None:
+    """Google's 404 for a retired model names its replacement: '... use models/gemini-3.8-flash ...'."""
+    m = re.search(r"use models/([\w.\-]+)", str(exc))
+    return m.group(1) if m else None
 
 
 def _gemini_schema(schema: Any) -> Any:
@@ -149,12 +156,13 @@ class GeminiBackend:
             # The configured model may not exist or not be enabled for this key (common on the
             # free tier with brand-new models). Fall back once to a widely available model.
             code = getattr(exc, "code", None)
-            if model == FALLBACK_GEMINI_MODEL or code not in (400, 403, 404):
+            fallback = _suggested_model(exc) or FALLBACK_GEMINI_MODEL
+            if fallback == model or code not in (400, 403, 404):
                 raise
             log.warning("Gemini model %s failed (%s: %s); falling back to %s",
-                        model, type(exc).__name__, str(exc)[:200], FALLBACK_GEMINI_MODEL)
-            response = self._generate(FALLBACK_GEMINI_MODEL, system, declarations, contents)
-            GeminiBackend._model_override = FALLBACK_GEMINI_MODEL
+                        model, type(exc).__name__, str(exc)[:200], fallback)
+            response = self._generate(fallback, system, declarations, contents)
+            GeminiBackend._model_override = fallback
         candidate = (response.candidates or [None])[0]
         block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
         if block_reason:
