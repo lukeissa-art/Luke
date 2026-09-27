@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ "Edit " ~ shop.name if shop else "Onboard a new shop" }}</h1>
+<p class="muted">Fill this in during the setup call. Everything here shapes what the assistant says.</p>
+<form method="post" action="{{ '/admin/shops/' ~ shop.id if shop else '/admin/shops' }}">
+<div class="card"><h2>The shop</h2>
+  <div class="row">
+    <div><label>Shop name</label><input name="name" required value="{{ shop.name if shop }}"></div>
+    <div><label>Trade</label><select name="trade">
+      {% for t in ["plumbing","hvac","electrical"] %}<option {{ "selected" if shop and shop.trade==t }}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label>Owner name</label><input name="owner_name" value="{{ shop.owner_name if shop }}"></div>
+    <div><label>Owner cell (transfers + summaries)</label><input name="owner_phone" required value="{{ shop.owner_phone if shop }}"></div>
+    <div><label>Assistant phone number (Twilio)</label><input name="twilio_number" value="{{ shop.twilio_number or '' if shop }}"></div>
+    <div><label>Time zone</label><input name="timezone" value="{{ shop.timezone if shop else 'America/Chicago' }}"></div>
+  </div>
+  <label>Service area (towns, zip codes, radius)</label><input name="service_area" value="{{ shop.service_area if shop }}">
+  <label>Services offered</label><textarea name="services">{{ shop.services if shop }}</textarea>
+  <label>Pricing the assistant may quote (e.g. "$89 service call, waived if we do the repair")</label><textarea name="pricing_notes">{{ shop.pricing_notes if shop }}</textarea>
+  <label>Extra instructions (brands you don't service, jobs you don't take, how to handle warranties)</label><textarea name="extra_instructions">{{ shop.extra_instructions if shop }}</textarea>
+  <label>Extra emergency keywords (comma separated, on top of the built-in gas/CO/flood rules)</label><input name="emergency_keywords" value="{{ shop.emergency_keywords if shop }}">
+</div>
+<div class="card"><h2>Schedule</h2>
+  <table class="hours">{% for d in days %}
+    <tr><td>{{ d|capitalize }}</td>
+    <td><input type="time" name="{{ d }}_open" value="{{ hours[d][0] if d in hours }}"></td>
+    <td><input type="time" name="{{ d }}_close" value="{{ hours[d][1] if d in hours }}"></td></tr>{% endfor %}
+  </table>
+  <div class="row">
+    <div><label>Arrival window length (minutes)</label><input type="number" name="slot_minutes" value="{{ shop.slot_minutes if shop else 120 }}"></div>
+    <div><label>Calendar</label><select name="calendar_provider">
+      {% for c in ["local","google"] %}<option {{ "selected" if shop and shop.calendar_provider==c }}>{{ c }}</option>{% endfor %}</select></div>
+    <div><label>Google Calendar ID (if google)</label><input name="google_calendar_id" value="{{ shop.google_calendar_id if shop }}"></div>
+  </div>
+</div>
+<div class="card"><h2>Plan & follow-up</h2>
+  <div class="row">
+    <div><label>Plan</label><select name="plan">
+      {% for key, p in plans.items() %}<option value="{{ key }}" {{ "selected" if (shop and shop.plan==key) or (not shop and key=="pro") }}>{{ p.name }} — ${{ p.monthly_price }}/mo, {{ p.monthly_call_cap }} calls</option>{% endfor %}</select></div>
+    <div><label>When to answer</label><select name="answer_mode">
+      <option value="after_hours" {{ "selected" if shop and shop.answer_mode=="after_hours" }}>After hours + when owner misses a call</option>
+      <option value="always" {{ "selected" if shop and shop.answer_mode=="always" }}>Every call, 24/7 (Pro/Plus)</option></select></div>
+    <div><label>Average job value ($, for ROI report)</label><input type="number" name="avg_job_value" value="{{ shop.avg_job_value if shop else 450 }}"></div>
+    {% if shop %}<div><label>Status</label><select name="status">
+      {% for st in ["trial","active","paused","cancelled"] %}<option {{ "selected" if shop.status==st }}>{{ st }}</option>{% endfor %}</select></div>{% endif %}
+  </div>
+  <label>Google review link</label><input name="google_review_url" value="{{ shop.google_review_url if shop }}">
+</div>
+<button type="submit">{{ "Save" if shop else "Create shop and start 14-day trial" }}</button>
+</form>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Company overview</h1>
+<div class="grid">
+  <div class="stat"><b>${{ "{:,}".format(mrr) }}</b><span>MRR</span></div>
+  <div class="stat"><b>${{ "{:,}".format(arr) }}</b><span>ARR (goal ≈ $290k)</span></div>
+  <div class="stat"><b>{{ active }} / {{ goal_shops }}</b><span>Paying shops vs year-1 goal</span></div>
+  <div class="stat"><b>{{ trials }}</b><span>Shops on trial</span></div>
+</div>
+<div class="card">
+  <h2>Shops (last 7 days)</h2>
+  {% if not rows %}<p class="muted">No shops yet. <a href="/admin/shops/new">Onboard your first shop</a>.</p>{% else %}
+  <table>
+    <tr><th>Shop</th><th>Status</th><th>Plan</th><th>Calls</th><th>After hours</th><th>Booked</th><th>Est. work captured</th><th>ROI</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><a href="/admin/shops/{{ r.shop.id }}">{{ r.shop.name }}</a><div class="muted">{{ r.shop.trade }}</div></td>
+      <td><span class="pill {{ r.shop.status }}">{{ r.shop.status }}</span></td>
+      <td>{{ r.plan.name }} (${{ r.plan.monthly_price }})</td>
+      <td>{{ r.stats.calls }}</td><td>{{ r.stats.after_hours }}</td><td>{{ r.stats.booked }}</td>
+      <td>${{ "{:,}".format(r.stats.est_revenue) }}</td>
+      <td>{{ "%.1f"|format(r.stats.roi_multiple) }}×</td>
+    </tr>
+    {% endfor %}
+  </table>{% endif %}
+</div>
+{% endblock %}

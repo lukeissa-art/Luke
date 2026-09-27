@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/admin/shops/{{ shop.id }}">← {{ shop.name }}</a></p>
+<h1>Call from {{ call.caller_phone|phone }}</h1>
+<div class="card">
+  <p>{{ call.started_at.replace("T"," ") }} · <span class="pill {{ call.outcome }}">{{ call.outcome or call.status }}</span>
+     {% if call.is_emergency %}<span class="pill urgent">urgent</span>{% endif %}</p>
+  <p><b>{{ call.caller_name or "Unknown" }}</b> {{ call.callback_phone|phone if call.callback_phone }}<br>{{ call.address }}<br>{{ call.problem }}</p>
+  {% if call.summary %}<p class="muted">Summary: {{ call.summary }}</p>{% endif %}
+</div>
+<div class="card"><h2>Transcript</h2>
+  <p class="muted">Review a few transcripts every week: it's how you catch script problems before customers do.</p>
+  <table>{% for t in transcript %}<tr><td style="width:90px" class="muted">{{ "Caller" if t.role == "caller" else "Assistant" }}</td><td>{{ t.text }}</td></tr>{% endfor %}</table>
+</div>
+{% endblock %}
