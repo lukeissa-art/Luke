@@ -19,6 +19,8 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "")
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
     monkeypatch.setenv("RUN_WORKER", "false")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
     get_settings.cache_clear()
     db.init_db()
     yield get_settings()
