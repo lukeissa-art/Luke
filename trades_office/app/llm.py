@@ -92,6 +92,7 @@ class AnthropicBackend:
 
 
 FALLBACK_GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_TIMEOUT_MS = 12_000  # Gemini's minimum allowed deadline is 10s
 
 
 def _suggested_model(exc: Exception) -> str | None:
@@ -122,9 +123,9 @@ class GeminiBackend:
 
             client = genai.Client(
                 api_key=get_settings().gemini_api_key,
-                # Retry briefly on rate limits / overload, but stay inside Twilio's ~15s webhook window.
+                # Gemini rejects deadlines under 10s. Retry briefly on rate limits / overload.
                 http_options=types.HttpOptions(
-                    timeout=6_000,
+                    timeout=GEMINI_TIMEOUT_MS,
                     retry_options=types.HttpRetryOptions(
                         attempts=2, initial_delay=1.0, max_delay=2.0, http_status_codes=[429, 500, 503]
                     ),
@@ -156,8 +157,13 @@ class GeminiBackend:
             # The configured model may not exist or not be enabled for this key (common on the
             # free tier with brand-new models). Fall back once to a widely available model.
             code = getattr(exc, "code", None)
-            fallback = _suggested_model(exc) or FALLBACK_GEMINI_MODEL
-            if fallback == model or code not in (400, 403, 404):
+            suggested = _suggested_model(exc)
+            # Only switch models when the model itself is the problem (retired / not found),
+            # not for other request errors.
+            if code != 404 and not suggested:
+                raise
+            fallback = suggested or FALLBACK_GEMINI_MODEL
+            if fallback == model:
                 raise
             log.warning("Gemini model %s failed (%s: %s); falling back to %s",
                         model, type(exc).__name__, str(exc)[:200], fallback)

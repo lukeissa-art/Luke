@@ -163,3 +163,29 @@ def test_ai_check_page_shows_the_error(settings, monkeypatch):
     with TestClient(app) as client:
         page = client.get("/admin/ai-check", auth=("admin", "secret"))
     assert page.status_code == 200 and "Failing" in page.text and "API key not valid" in page.text
+
+
+def test_gemini_client_deadline_meets_googles_minimum(monkeypatch):
+    # Google rejects requests whose deadline is under 10s ("Minimum allowed deadline is 10s").
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    backend = llm.GeminiBackend()
+    assert backend.client._api_client._http_options.timeout >= 10_000
+
+
+def test_non_model_errors_do_not_switch_models(conn, shop, monkeypatch):
+    monkeypatch.setattr(llm.GeminiBackend, "_model_override", None)
+    c = calls.start_call(conn, shop, "CAG6", "+15125550142", now=NOW)
+
+    class BadRequest(Exception):
+        code = 400
+
+    class Always400(FakeGemini):
+        def _generate(self, *, model, contents, config):
+            self.requests.append({"model": model})
+            raise BadRequest("400 INVALID_ARGUMENT. Manually set deadline 6s is too short.")
+
+    fake = Always400([])
+    assert respond(conn, shop, c["id"], fake, "hi").action == "transfer"
+    assert [r["model"] for r in fake.requests] == ["gemini-3.8-flash"]
