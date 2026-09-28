@@ -132,6 +132,8 @@
   .ask-panel { position: fixed; right: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 21;
                width: min(380px, calc(100vw - 32px)); background: var(--surface); border: 2px solid var(--ink);
                box-shadow: 8px 8px 0 var(--ink); display: flex; flex-direction: column; max-height: min(560px, 75vh); }
+  /* .ask-panel sets display:flex, which would override the hidden attribute: keep it closed when hidden */
+  .ask-panel[hidden] { display: none; }
   .ask-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px;
               border-bottom: 2px solid var(--ink); font-weight: 700; }
   .ask-head button { background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--ink); }
@@ -486,7 +488,10 @@
     if (open) askInput.focus();
   }
   askOpen.addEventListener("click", () => toggleAsk(askPanel.hidden));
-  document.getElementById("ask-close").addEventListener("click", () => toggleAsk(false));
+  document.getElementById("ask-close").addEventListener("click", () => { toggleAsk(false); askOpen.focus(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !askPanel.hidden) { toggleAsk(false); askOpen.focus(); }
+  });
   function askAdd(kind, text) {
     const div = document.createElement("div"); div.className = "msg " + kind; div.textContent = text;
     askLog.append(div); askLog.scrollTop = askLog.scrollHeight; return div;

@@ -58,6 +58,9 @@ def test_ask_validation_and_failure(client, monkeypatch):
 def test_home_page_has_ask_widget(client):
     page = client.get("/").text
     assert 'id="ask-panel"' in page and "Questions? Ask us" in page
+    # the panel starts closed, and its display:flex must not override the hidden attribute
+    assert '<section class="ask-panel" id="ask-panel" hidden' in page
+    assert ".ask-panel[hidden] { display: none; }" in page
 
 
 def test_receptionist_prompt_has_shop_facts(conn):
