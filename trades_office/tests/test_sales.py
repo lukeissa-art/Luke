@@ -55,10 +55,9 @@ def test_ask_validation_and_failure(client, monkeypatch):
     assert r.status_code == 200 and "email" in r.json()["answer"]
 
 
-def test_home_page_has_no_floating_chat_button(client):
-    # The owner preferred the page without the floating "Questions? Ask us" button.
+def test_home_page_has_ask_widget(client):
     page = client.get("/").text
-    assert 'id="ask-panel"' not in page and "Questions? Ask us" not in page
+    assert 'id="ask-panel"' in page and "Questions? Ask us" in page
 
 
 def test_receptionist_prompt_has_shop_facts(conn):
