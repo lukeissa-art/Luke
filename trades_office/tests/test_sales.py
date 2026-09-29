@@ -55,12 +55,10 @@ def test_ask_validation_and_failure(client, monkeypatch):
     assert r.status_code == 200 and "email" in r.json()["answer"]
 
 
-def test_home_page_has_ask_widget(client):
+def test_home_page_has_no_floating_chat(client):
+    # The owner asked for the floating "Questions? Ask us" chat to be removed from the page.
     page = client.get("/").text
-    assert 'id="ask-panel"' in page and "Questions? Ask us" in page
-    # the panel starts closed, and its display:flex must not override the hidden attribute
-    assert '<section class="ask-panel" id="ask-panel" hidden' in page
-    assert ".ask-panel[hidden] { display: none; }" in page
+    assert 'id="ask-panel"' not in page and "Questions? Ask us" not in page and "ask-btn" not in page
 
 
 def test_receptionist_prompt_has_shop_facts(conn):
