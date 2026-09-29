@@ -187,6 +187,9 @@ def _answer(body: dict) -> Any:
         step = backend.step(system_prompt(), [], messages)
     except Exception as exc:
         log.exception("Website assistant failed (%s: %s)", type(exc).__name__, str(exc)[:300])
+        from . import llm
+
+        llm.record_error("website assistant", exc)
         return JSONResponse({"answer": "Sorry, I can't answer right now. Please email "
                                        f"{get_settings().contact_email} or use the trial form below."})
     if step.refused or not step.spoken:

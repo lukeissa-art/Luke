@@ -7,6 +7,7 @@ must finish on the backend it started with.
 
 import json
 import re
+import time
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -93,7 +94,21 @@ class AnthropicBackend:
 
 
 FALLBACK_GEMINI_MODEL = "gemini-3.8-flash"
-GEMINI_TIMEOUT_MS = 12_000  # Gemini's minimum allowed deadline is 10s
+GEMINI_TIMEOUT_MS = 12_000
+# When the main model is rate-limited or overloaded, try this lighter model: it has its own quota.
+BUSY_FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite"
+BUSY_CODES = (429, 500, 503)
+BUSY_COOLDOWN_SECONDS = 600
+
+# The most recent AI failure, shown on the dashboard so problems are visible without host logs.
+last_error: dict[str, str] = {}
+
+
+def record_error(where: str, exc: Exception) -> None:
+    from datetime import datetime, timezone
+
+    last_error.update(when=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), where=where,
+                      error=f"{type(exc).__name__}: {str(exc)[:500]}")  # Gemini's minimum allowed deadline is 10s
 
 
 def _suggested_model(exc: Exception) -> str | None:
@@ -115,6 +130,7 @@ class GeminiBackend:
     name = "gemini"
     # Set when the configured model isn't available on this key and the fallback worked.
     _model_override: str | None = None
+    _busy_until: float = 0.0
 
     def __init__(self, client: Any = None):
         if client is None:
@@ -152,12 +168,21 @@ class GeminiBackend:
         ]
         contents = [types.Content.model_validate(m) for m in messages]
         model = GeminiBackend._model_override or get_settings().gemini_model
+        if time.monotonic() < GeminiBackend._busy_until:
+            model = BUSY_FALLBACK_GEMINI_MODEL
         try:
             response = self._generate(model, system, declarations, contents)
         except Exception as exc:
             # The configured model may not exist or not be enabled for this key (common on the
             # free tier with brand-new models). Fall back once to a widely available model.
             code = getattr(exc, "code", None)
+            if code in BUSY_CODES and model != BUSY_FALLBACK_GEMINI_MODEL:
+                log.warning("Gemini model %s is busy or over quota (%s: %s); trying %s",
+                            model, type(exc).__name__, str(exc)[:200], BUSY_FALLBACK_GEMINI_MODEL)
+                response = self._generate(BUSY_FALLBACK_GEMINI_MODEL, system, declarations, contents)
+                # Stay on the lighter model for a while so a conversation doesn't bounce between models.
+                GeminiBackend._busy_until = time.monotonic() + BUSY_COOLDOWN_SECONDS
+                return self._to_step(response)
             suggested = _suggested_model(exc)
             # Only switch models when the model itself is the problem (retired / not found),
             # not for other request errors.
@@ -170,6 +195,9 @@ class GeminiBackend:
                         model, type(exc).__name__, str(exc)[:200], fallback)
             response = self._generate(fallback, system, declarations, contents)
             GeminiBackend._model_override = fallback
+        return self._to_step(response)
+
+    def _to_step(self, response) -> Step:
         candidate = (response.candidates or [None])[0]
         block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
         if block_reason:

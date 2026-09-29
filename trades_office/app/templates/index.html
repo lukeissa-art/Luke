@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Company overview</h1>
+{% if ai_error %}
+<div class="card" style="border-color:var(--bad)">
+  <h2 style="color:var(--bad)">The AI had a problem</h2>
+  <p>Last failure: {{ ai_error.when }} ({{ ai_error.where }}). Callers got "Let me connect you to the team" instead of an answer.</p>
+  <p class="muted" style="word-break:break-word">{{ ai_error.error }}</p>
+  <p><a href="/admin/ai-check">Run the AI check</a></p>
+</div>
+{% endif %}
 <div class="grid">
   <div class="stat"><b>${{ "{:,}".format(mrr) }}</b><span>MRR</span></div>
   <div class="stat"><b>${{ "{:,}".format(arr) }}</b><span>ARR (goal ≈ $290k)</span></div>
