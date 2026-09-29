@@ -125,23 +125,6 @@
   .faq details[open] summary::after { content: "–"; }
   .faq details p { margin-top: 10px; color: var(--muted); max-width: 44em; }
 
-  /* ask-us widget */
-  .ask-btn { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 20;
-             font: 700 16px/1 var(--body); background: var(--ink); color: var(--paper); border: 2px solid var(--ink);
-             border-radius: 99px; padding: 14px 18px; cursor: pointer; box-shadow: 4px 4px 0 var(--hi); }
-  .ask-panel { position: fixed; right: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 21;
-               width: min(380px, calc(100vw - 32px)); background: var(--surface); border: 2px solid var(--ink);
-               box-shadow: 8px 8px 0 var(--ink); display: flex; flex-direction: column; max-height: min(560px, 75vh); }
-  /* .ask-panel sets display:flex, which would override the hidden attribute: keep it closed when hidden */
-  .ask-panel[hidden] { display: none; }
-  .ask-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px;
-              border-bottom: 2px solid var(--ink); font-weight: 700; }
-  .ask-head button { background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: var(--ink); }
-  .ask-log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 160px; }
-  .ask-form { display: flex; gap: 8px; padding: 10px; border-top: 2px solid var(--ink); }
-  .ask-form input { flex: 1; min-width: 0; }
-  .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-
   @media (max-width: 900px) {
     .hero, .handles, .demo, .trial { grid-template-columns: minmax(0, 1fr); gap: 40px; }
     .plans, .steps { grid-template-columns: minmax(0, 1fr); }
@@ -249,7 +232,7 @@
       <p class="eyebrow">Try it</p>
       <h2 id="demo-title">Be the customer</h2>
       <p class="lede">You're a customer calling a pretend plumbing shop, Riverside Plumbing &amp; Heating. This is the same assistant your shop would get, set up with that shop's prices and hours. Describe a problem, ask what a service call costs, and try to book a visit. Try a gas smell too.</p>
-      <p class="fine">Questions about {{ company }} itself, like plans or the trial? Use <b>Questions? Ask us</b> at the bottom right.</p>
+      <p class="fine">Questions about {{ company }} itself, like plans or the trial? See <a href="#pricing">pricing</a> and the <a href="#faq">FAQ</a> below.</p>
       {% if demo_phone %}<p>Prefer a real phone call? Dial the demo line: <b style="font-family:var(--mono)">{{ demo_phone }}</b></p>{% endif %}
       <div class="prompts" aria-label="Example things to say">
         <button class="chip" type="button">My kitchen sink is backing up</button>
@@ -371,24 +354,6 @@
 
 {% include "site/_footer.html" %}
 
-<button class="ask-btn" id="ask-open" type="button" aria-expanded="false" aria-controls="ask-panel">Questions? Ask us</button>
-<section class="ask-panel" id="ask-panel" hidden aria-label="Ask about {{ company }}">
-  <div class="ask-head"><span>Ask about {{ company }}</span><button type="button" id="ask-close" aria-label="Close">×</button></div>
-  <div class="ask-log" id="ask-log" aria-live="polite">
-    <div class="msg ai">Hi! Ask me anything about {{ company }}: plans, the free trial, setup, or how it handles calls.</div>
-    <div class="ask-chips">
-      <button class="chip ask-chip" type="button">How much does it cost?</button>
-      <button class="chip ask-chip" type="button">How does the free trial work?</button>
-      <button class="chip ask-chip" type="button">Do I need a new phone number?</button>
-    </div>
-  </div>
-  <form class="ask-form" id="ask-form">
-    <label for="ask-input" class="hp">Your question</label>
-    <input id="ask-input" autocomplete="off" maxlength="500" placeholder="Type your question…">
-    <button class="btn btn-hi" type="submit" style="padding:10px 14px;box-shadow:none">Ask</button>
-  </form>
-</section>
-
 <script>
 (function () {
   const PREVIEW = {{ "true" if fragment else "false" }};
@@ -477,44 +442,6 @@
     finally { busy = false; status.textContent = "demo line"; }
   }
   document.getElementById("chat-form").addEventListener("submit", (e) => { e.preventDefault(); say(input.value); });
-
-  // --- ask-us widget (questions about the company) ---
-  const askPanel = document.getElementById("ask-panel"), askOpen = document.getElementById("ask-open");
-  const askLog = document.getElementById("ask-log"), askInput = document.getElementById("ask-input");
-  const askHistory = [];
-  let asking = false;
-  function toggleAsk(open) {
-    askPanel.hidden = !open; askOpen.setAttribute("aria-expanded", String(open));
-    if (open) askInput.focus();
-  }
-  askOpen.addEventListener("click", () => toggleAsk(askPanel.hidden));
-  document.getElementById("ask-close").addEventListener("click", () => { toggleAsk(false); askOpen.focus(); });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !askPanel.hidden) { toggleAsk(false); askOpen.focus(); }
-  });
-  function askAdd(kind, text) {
-    const div = document.createElement("div"); div.className = "msg " + kind; div.textContent = text;
-    askLog.append(div); askLog.scrollTop = askLog.scrollHeight; return div;
-  }
-  async function ask(question) {
-    question = question.trim();
-    if (!question || asking) return;
-    askAdd("you", question); askInput.value = "";
-    if (PREVIEW) { askAdd("sys", "This preview can't reach the assistant. On the live site it answers here."); return; }
-    asking = true;
-    const wait = askAdd("sys", "…");
-    try {
-      const r = await fetch("/ask", { method: "POST", headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ question, history: askHistory }) });
-      const d = await r.json(); wait.remove();
-      if (!r.ok) { askAdd("sys", d.error || "That didn't work. Try again in a moment."); return; }
-      askAdd("ai", d.answer);
-      askHistory.push({ role: "user", text: question }, { role: "assistant", text: d.answer });
-    } catch (err) { wait.remove(); askAdd("sys", "Couldn't reach the assistant. Check your connection and try again."); }
-    finally { asking = false; }
-  }
-  document.getElementById("ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask(askInput.value); });
-  document.querySelectorAll(".ask-chip").forEach((c) => c.addEventListener("click", () => ask(c.textContent)));
   document.querySelectorAll(".prompts .chip").forEach((c) => c.addEventListener("click", () => say(c.textContent)));
 })();
 </script>
