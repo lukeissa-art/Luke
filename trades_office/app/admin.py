@@ -60,7 +60,9 @@ def overview(request: Request):
             rows.append({"shop": shop, "stats": st, "plan": get_plan(shop["plan"])})
     mrr = sum(r["plan"].monthly_price for r in rows if r["shop"]["status"] == "active")
     trials = sum(1 for r in rows if r["shop"]["status"] == "trial")
-    return _render(request, "index.html", rows=rows, leads=leads, mrr=mrr, arr=mrr * 12, trials=trials,
+    from . import llm
+
+    return _render(request, "index.html", rows=rows, leads=leads, ai_error=dict(llm.last_error), mrr=mrr, arr=mrr * 12, trials=trials,
                    active=sum(1 for r in rows if r["shop"]["status"] == "active"),
                    goal_shops=60)
 

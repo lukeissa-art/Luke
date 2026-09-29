@@ -251,6 +251,7 @@ class Receptionist:
         except Exception as exc:  # never leave a live caller hanging: any AI failure goes to a human
             log.exception("Assistant failed on call %s (%s: %s); transferring to owner",
                           self.call_id, type(exc).__name__, str(exc)[:300])
+            llm.record_error("phone assistant", exc)
             say = "I'm sorry, I'm having trouble on my end. Let me connect you to the team."
             self.action = "transfer"
             self.end_state = {"outcome": "transferred", "summary": "Assistant error; call sent to you."}

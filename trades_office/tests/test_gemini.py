@@ -189,3 +189,44 @@ def test_non_model_errors_do_not_switch_models(conn, shop, monkeypatch):
     fake = Always400([])
     assert respond(conn, shop, c["id"], fake, "hi").action == "transfer"
     assert [r["model"] for r in fake.requests] == ["gemini-3.8-flash"]
+
+
+def test_quota_error_retries_on_lighter_model(conn, shop, monkeypatch):
+    monkeypatch.setattr(llm.GeminiBackend, "_model_override", None)
+    monkeypatch.setattr(llm.GeminiBackend, "_busy_until", 0.0)
+    c = calls.start_call(conn, shop, "CAG7", "+15125550142", now=NOW)
+
+    class Quota(Exception):
+        code = 429
+
+    class Limited(FakeGemini):
+        def _generate(self, *, model, contents, config):
+            if model != llm.BUSY_FALLBACK_GEMINI_MODEL:
+                self.requests.append({"model": model})
+                raise Quota("429 RESOURCE_EXHAUSTED. You exceeded your current quota.")
+            return super()._generate(model=model, contents=contents, config=config)
+
+    fake = Limited([gem(text("Hi! How can I help?")), gem(text("Sure."))])
+    assert respond(conn, shop, c["id"], fake, "hello").action == "continue"
+    assert [r["model"] for r in fake.requests] == ["gemini-3.8-flash", "gemini-3.1-flash-lite"]
+    # the next turn stays on the lighter model during the cool-down
+    respond(conn, shop, c["id"], fake, "my sink is clogged")
+    assert fake.requests[-1]["model"] == "gemini-3.1-flash-lite"
+
+
+def test_dashboard_shows_last_ai_error(settings, conn, shop, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.setattr(llm, "last_error", {})
+    c = calls.start_call(conn, shop, "CAG8", "+15125550142", now=NOW)
+
+    class Broken(FakeGemini):
+        def _generate(self, **kw):
+            raise RuntimeError("400 INVALID_ARGUMENT something odd")
+
+    assert respond(conn, shop, c["id"], Broken([]), "hi").action == "transfer"
+    with TestClient(app) as client:
+        page = client.get("/admin/", auth=("admin", "secret")).text
+    assert "The AI had a problem" in page and "something odd" in page
