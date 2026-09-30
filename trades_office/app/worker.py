@@ -8,7 +8,7 @@ import logging
 import threading
 from datetime import datetime
 
-from . import db, followups, reports
+from . import calls, db, followups, reports
 
 log = logging.getLogger("worker")
 
@@ -19,6 +19,9 @@ REPORT_HOUR_UTC = 13  # ~8am Central
 def tick(now: datetime, last_report_day=None):
     """One pass of the job loop. Returns the date weekly reports last went out."""
     with db.session() as conn:
+        closed = calls.close_stale_web_chats(conn, now)
+        if closed:
+            log.info("Closed %d finished website chats", closed)
         sent = followups.dispatch_due(conn, now)
         if sent:
             log.info("Sent %d follow-up texts", sent)
