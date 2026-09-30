@@ -16,7 +16,7 @@
 
 {% if shop.status == "trial" %}
 <div class="card"><h2>Trial</h2>
-  <p>Trial ends {{ shop.trial_ends_at[:10] }}. At the end, show the owner the calls caught and jobs booked, then send the payment link.</p>
+  <p>Trial ends {{ (shop.trial_ends_at or "")[:10] or "(no end date set)" }}. At the end, show the owner the calls caught and jobs booked, then send the payment link.</p>
   <form method="post" action="/admin/shops/{{ shop.id }}/checkout">
     <label style="display:inline"><input type="checkbox" name="waive_setup_fee" value="true" style="width:auto"> Waive $500 setup fee (first 10 customers, for a testimonial)</label><br><br>
     <button>Create payment link</button>
@@ -27,7 +27,7 @@
 <div class="card"><h2>Recent calls</h2>
   <table><tr><th>When</th><th>Caller</th><th>Outcome</th><th>Problem</th></tr>
   {% for c in calls %}<tr>
-    <td><a href="/admin/calls/{{ c.id }}">{{ c.started_at[:16].replace("T"," ") }}</a>{% if c.call_sid.startswith("demo-") %} <span class="muted">(test)</span>{% endif %}</td>
+    <td><a href="/admin/calls/{{ c.id }}">{{ c.started_at[:16].replace("T"," ") }}</a>{% if c.call_sid.startswith("demo-") %} <span class="muted">(test)</span>{% elif c.call_sid.startswith("web-") %} <span class="muted">(website)</span>{% endif %}</td>
     <td>{{ c.caller_name or "—" }}<div class="muted">{{ (c.callback_phone or c.caller_phone)|phone }}</div></td>
     <td>{% if c.is_emergency %}<span class="pill urgent">urgent</span> {% endif %}<span class="pill {{ c.outcome }}">{{ c.outcome or c.status }}</span></td>
     <td>{{ c.problem or c.summary }}</td></tr>
@@ -66,6 +66,25 @@
   {% for f in followups %}<tr><td>{{ f.send_at[:16].replace("T"," ") }}</td><td>{{ f.kind }}</td><td>{{ f.to_phone|phone }}</td>
     <td><span class="pill {{ f.status }}">{{ f.status }}</span></td><td class="muted">{{ f.body }}</td></tr>
   {% else %}<tr><td colspan="5" class="muted">None yet.</td></tr>{% endfor %}</table>
+</div>
+
+<div class="card"><h2>Website chat</h2>
+  <p>Put a "Chat with us" button on this shop's website. Visitors chat with the same assistant as the phone line: it answers with this shop's prices and hours, books jobs, and texts the owner a summary.</p>
+  {% if widget_snippet %}
+  <label>1. Paste this just before <code>&lt;/body&gt;</code> on their website (Wix: Settings → Custom code; Squarespace: Settings → Code injection → Footer; WordPress: a "header &amp; footer scripts" plugin)</label>
+  <div style="display:flex;gap:8px"><input readonly id="snippet" value="{{ widget_snippet }}" onclick="this.select()"><button type="button" onclick="copyField('snippet', this)">Copy</button></div>
+  <label>Or share a direct chat link (Google Business profile, Facebook, text messages)</label>
+  <div style="display:flex;gap:8px"><input readonly id="chatlink" value="{{ widget_link }}" onclick="this.select()"><button type="button" onclick="copyField('chatlink', this)">Copy</button></div>
+  <p class="muted">Optional: add <code>data-label="Book a visit"</code> or <code>data-color="#0f766e"</code> to the snippet to change the button's text or color. <a href="{{ widget_link }}" target="_blank" rel="noopener">Open the chat</a> to try it. Website chats show up under Recent calls, marked "website".</p>
+  <script>
+    function copyField(id, btn) {
+      var el = document.getElementById(id); el.select();
+      (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(
+        function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); },
+        function () { document.execCommand && document.execCommand("copy"); });
+    }
+  </script>
+  {% endif %}
 </div>
 
 <div class="card"><h2>Twilio setup for this shop</h2>

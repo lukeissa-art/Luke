@@ -160,6 +160,28 @@ def connect(path: str | None = None) -> sqlite3.Connection:
 def init_db(path: str | None = None) -> None:
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database was first created."""
+    shop_cols = {r["name"] for r in conn.execute("PRAGMA table_info(shops)")}
+    if "widget_key" not in shop_cols:
+        conn.execute("ALTER TABLE shops ADD COLUMN widget_key TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_widget_key ON shops(widget_key)")
+    for row in conn.execute("SELECT id FROM shops WHERE widget_key IS NULL").fetchall():
+        conn.execute("UPDATE shops SET widget_key = ? WHERE id = ?", (new_widget_key(), row["id"]))
+
+
+def new_widget_key() -> str:
+    """Public, unguessable id for a shop's website chat (safe to put in page source)."""
+    import secrets
+
+    return secrets.token_urlsafe(9)
+
+
+def shop_by_widget_key(conn: sqlite3.Connection, key: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM shops WHERE widget_key = ?", (key,)).fetchone()
 
 
 @contextmanager
@@ -176,6 +198,8 @@ def session() -> Iterator[sqlite3.Connection]:
 
 
 def insert(conn: sqlite3.Connection, table: str, values: dict[str, Any]) -> int:
+    if table == "shops" and not values.get("widget_key"):
+        values = {**values, "widget_key": new_widget_key()}
     cols = ", ".join(values)
     marks = ", ".join("?" for _ in values)
     cur = conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(values.values()))

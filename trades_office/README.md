@@ -64,6 +64,21 @@ With Twilio left blank, texts are logged to the console and saved in the `sms_lo
 4. **Stripe**: create three monthly prices (249, 449, 799) and set their IDs. Point a webhook at `{PUBLIC_BASE_URL}/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.payment_failed`.
 5. **Google Calendar** (optional, per shop): `pip install google-api-python-client google-auth`, create a service account, set `GOOGLE_SERVICE_ACCOUNT_FILE`, and have each shop share their calendar with the service account's email. Then set the shop's calendar to `google` in the dashboard.
 
+## Website chat for your customers' sites
+
+Each shop gets a chat button for its own website, using the same assistant as its phone line (the shop's prices, hours, services and calendar). On the shop's dashboard page, the **Website chat** box has:
+
+- **A one-line snippet** to paste before `</body>` on the shop's site:
+  `<script src="https://YOUR-APP/widget.js" data-shop="WIDGET_KEY" async></script>`
+  (Wix: Settings → Custom code. Squarespace: Settings → Code injection → Footer. WordPress: a header & footer scripts plugin.) Optional `data-label="Book a visit"`, `data-color="#0f766e"`, `data-position="left"`.
+- **A direct chat link** (`/chat/WIDGET_KEY`) for shops without a website: Google Business profile, Facebook, texts.
+
+How it behaves:
+- The chat opens in a small panel (an iframe, so the shop's site styles can't break it). It closes with × or Esc.
+- It asks visitors for their phone number, books into open windows, and the owner gets a `[WEBSITE CHAT]` text summary. Chats that go quiet are wrapped up after 45 minutes, and visitors who left details but didn't book get the usual follow-up text.
+- Emergencies (gas, CO, sparks) get safety instructions plus "call the shop now at …", and the owner gets an urgent text.
+- Rate limited per visitor, counted toward the shop's monthly limit, and offline (with the shop's number) when the shop is paused or cancelled.
+
 ## The website
 
 - `/` home page, `/privacy`, `/terms`, `/thanks`. The privacy policy includes the SMS wording Twilio's A2P 10DLC review looks for.

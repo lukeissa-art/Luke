@@ -16,6 +16,7 @@ from . import calls, db, followups, reports, scheduling
 from .config import get_settings
 from .plans import PLANS, TRIAL_DAYS, get_plan
 from .receptionist import Receptionist, greeting, normalize_phone, pretty_phone
+from .widget import chat_link as widget_link, snippet as widget_snippet
 
 security = HTTPBasic()
 
@@ -145,6 +146,8 @@ def shop_detail(request: Request, shop_id: int):
             slots=scheduling.open_slots(conn, shop, limit=3),
             label=lambda iso: scheduling.label(shop, iso),
             base_url=get_settings().public_base_url,
+            widget_snippet=widget_snippet(shop["widget_key"]) if shop["widget_key"] else "",
+            widget_link=widget_link(shop["widget_key"]) if shop["widget_key"] else "",
         )
     return _render(request, "shop.html", **ctx)
 

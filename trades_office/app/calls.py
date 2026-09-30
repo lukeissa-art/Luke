@@ -1,7 +1,7 @@
 """Call lifecycle: start, monthly caps, and wrap-up (owner summary + follow-ups)."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import db, followups, sms
 from .plans import get_plan
@@ -60,7 +60,10 @@ def finalize_call(conn: sqlite3.Connection, call_id: int, *, status: str = "comp
         return
     if outcome in ("spam", "not_a_customer"):
         return
-    if outcome == "hangup" and not call["caller_name"]:
+    is_web = call["call_sid"].startswith("web-")
+    if is_web and not (call["caller_name"] or call["callback_phone"] or call["problem"]):
+        return  # visitor opened the website chat and left without leaving details
+    if outcome == "hangup" and not call["caller_name"] and not is_web:
         # Caller hung up before giving details: still worth a text-back.
         followups.schedule_unbooked(conn, shop, call, now=now)
         sms.send(conn, shop, shop["owner_phone"],
@@ -68,7 +71,9 @@ def finalize_call(conn: sqlite3.Connection, call_id: int, *, status: str = "comp
                  "We texted them to rebook.", to_owner=True)
         return
 
-    sms.send(conn, shop, shop["owner_phone"], owner_summary(call, outcome), to_owner=True)
+    summary = owner_summary(call, outcome)
+    sms.send(conn, shop, shop["owner_phone"], ("[WEBSITE CHAT] " + summary) if is_web else summary,
+             to_owner=True)
     if outcome not in ("booked", "transferred"):
         followups.schedule_unbooked(conn, shop, call, now=now)
 
@@ -103,3 +108,18 @@ def complete_appointment(conn: sqlite3.Connection, appt_id: int, now: datetime |
     followups.schedule_review_request(conn, shop, db.get(conn, "appointments", appt_id), now=now)
     if get_plan(shop["plan"]).maintenance_reminders:
         followups.schedule_maintenance(conn, shop, appt, now=now)
+
+
+WEB_CHAT_IDLE = timedelta(minutes=45)
+
+
+def close_stale_web_chats(conn: sqlite3.Connection, now: datetime | None = None) -> int:
+    """Website visitors just leave, so wrap up chats that have gone quiet (owner summary, follow-ups)."""
+    now = now or db.utcnow()
+    rows = conn.execute(
+        "SELECT id FROM calls WHERE call_sid LIKE 'web-%' AND owner_notified = 0 AND started_at < ?",
+        (db.iso(now - WEB_CHAT_IDLE),),
+    ).fetchall()
+    for row in rows:
+        finalize_call(conn, row["id"], now=now)
+    return len(rows)

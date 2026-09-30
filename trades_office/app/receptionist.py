@@ -98,7 +98,12 @@ TOOL_END = _tool(
 )
 
 
-def build_system_prompt(shop: sqlite3.Row) -> str:
+def shop_phone(shop: sqlite3.Row) -> str:
+    """The number the public may call: the shop's assistant line (never the owner's cell)."""
+    return pretty_phone(shop["twilio_number"]) if shop["twilio_number"] else "the shop's main number"
+
+
+def build_system_prompt(shop: sqlite3.Row, channel: str = "phone") -> str:
     s = get_settings()
     plan = get_plan(shop["plan"])
     trade = TRADE_LABELS.get(shop["trade"], shop["trade"])
@@ -109,7 +114,31 @@ def build_system_prompt(shop: sqlite3.Row) -> str:
         else "You cannot book appointments on this plan. Take a detailed message and tell the caller "
         "someone from the shop will call them back shortly."
     )
-    return f"""You are the phone receptionist for {shop['name']}, a {trade} company. \
+    if channel == "web":
+        role = f"the website chat assistant for {shop['name']}, a {trade} company"
+        how_to_talk = """- This is a text chat on the shop's website. Reply in one to three short, warm sentences. \
+Plain text only: no markdown, no lists, no emoji.
+- Ask one question at a time. You don't know the visitor's phone number: always ask for the best number \
+to reach them, and repeat the address and number back to confirm.
+- Never diagnose the problem or give repair instructions. The only exception is safety: water shut-off \
+valve for an active leak, or leaving the building for gas or smoke."""
+        emergency_rule = f"""- Emergencies (gas smell, carbon monoxide, sparks or smoke, flooding, sewage backup, no heat in \
+freezing weather, anyone vulnerable at risk): safety instructions first, tell them to call 911 if anyone is in \
+danger and to call the shop right now at {shop_phone(shop)}, then use transfer_to_owner (it alerts the owner).
+- Before you end the chat, tell the visitor what happens next and say goodbye, then call end_call."""
+    else:
+        role = f"the phone receptionist for {shop['name']}, a {trade} company"
+        how_to_talk = """- This is a phone call. Your words are read aloud by a text-to-speech voice. Speak in one or two short, \
+warm sentences at a time. No lists, no markdown, no emoji, no abbreviations like "approx."
+- Ask one question at a time. Speech recognition makes mistakes, so repeat back addresses and phone \
+numbers to confirm them. Read phone numbers digit by digit.
+- Use the caller ID number if the caller says it's the best number to reach them.
+- Never diagnose the problem or give repair instructions. The only exception is safety: water shut-off \
+valve for an active leak, or leaving the building for gas or smoke."""
+        emergency_rule = """- Emergencies (gas smell, carbon monoxide, sparks or smoke, flooding, sewage backup, no heat in freezing \
+weather, anyone vulnerable at risk): safety instructions first, then use transfer_to_owner right away.
+- Before you end the call, tell the caller what happens next and say goodbye, then call end_call."""
+    return f"""You are {role}. \
 You answer on the shop's behalf when the team is on job sites or after hours. \
 You are a virtual assistant provided by {s.company_name}; if anyone asks whether you are a person or AI, say you \
 are the shop's virtual assistant.
@@ -118,13 +147,7 @@ Your goal on every call: capture the job. Get the caller's name, the best callba
 address, and a clear description of the problem, then book them or take a message.
 
 How to talk:
-- This is a phone call. Your words are read aloud by a text-to-speech voice. Speak in one or two short, \
-warm sentences at a time. No lists, no markdown, no emoji, no abbreviations like "approx."
-- Ask one question at a time. Speech recognition makes mistakes, so repeat back addresses and phone \
-numbers to confirm them. Read phone numbers digit by digit.
-- Use the caller ID number if the caller says it's the best number to reach them.
-- Never diagnose the problem or give repair instructions. The only exception is safety: water shut-off \
-valve for an active leak, or leaving the building for gas or smoke.
+{how_to_talk}
 - Answer the caller's questions (prices, hours, services, service area) using ONLY the shop facts below, \
 then steer back to getting them booked. When asked about cost, say the pricing notes in plain words, \
 exactly as written. If something isn't in the shop facts, don't guess: say the team will confirm it \
@@ -132,9 +155,7 @@ when they call back. Never make up prices, discounts, warranties, brands, or tim
 - Never promise an exact arrival time; appointments are arrival windows.
 - If someone is selling something, asking for a job, or is clearly spam, politely end the call.
 - {booking_rule}
-- Emergencies (gas smell, carbon monoxide, sparks or smoke, flooding, sewage backup, no heat in freezing \
-weather, anyone vulnerable at risk): safety instructions first, then use transfer_to_owner right away.
-- Before you end the call, tell the caller what happens next and say goodbye, then call end_call.
+{emergency_rule}
 
 Shop facts (the only facts you may state about the shop):
 - Business: {shop['name']}, {trade}
@@ -172,7 +193,10 @@ def format_hours(shop: sqlite3.Row) -> str:
     return text + (f"; closed {', '.join(closed)}" if closed else "")
 
 
-def greeting(shop: sqlite3.Row) -> str:
+def greeting(shop: sqlite3.Row, channel: str = "phone") -> str:
+    if channel == "web":
+        return (f"Hi! You've reached {shop['name']}. I'm the shop's virtual assistant. "
+                "What can we help you with today?")
     return (
         f"Thanks for calling {shop['name']}. This call may be recorded. "
         "I'm the shop's virtual assistant. How can I help you today?"
@@ -212,6 +236,8 @@ class Receptionist:
         self.caller_phone = call["caller_phone"]
         self.is_demo = call["call_sid"].startswith("demo-")
         self.is_public_demo = call["call_sid"].startswith("demo-web-")
+        # Website chats (the embeddable widget) are text, not phone calls.
+        self.channel = "web" if call["call_sid"].startswith("web-") else "phone"
         self.messages: list[dict[str, Any]] = json.loads(call["messages"])
         self.transcript: list[dict[str, str]] = json.loads(call["transcript"])
         self.backend = backend or make_backend(client)
@@ -230,9 +256,11 @@ class Receptionist:
             tz = ZoneInfo(self.shop["timezone"])
             local = (self.now or db.utcnow()).astimezone(tz)
             content = (
-                f"[Call started {local:%A %B %d %Y, %I:%M %p} shop local time. "
-                f"Caller ID: {self.caller_phone or 'unknown'}. "
-                f"You already greeted them: \"{greeting(self.shop)}\"]\n\n{content}"
+                f"[{'Website chat' if self.channel == 'web' else 'Call'} started "
+                f"{local:%A %B %d %Y, %I:%M %p} shop local time. "
+                + (f"Caller ID: {self.caller_phone or 'unknown'}. " if self.channel == "phone"
+                   else "The visitor's phone number is unknown: ask for it. ")
+                + f"You already greeted them: \"{greeting(self.shop, self.channel)}\"]\n\n{content}"
             )
 
         match = emergency.check(caller_text, self.shop["emergency_keywords"])
@@ -242,7 +270,8 @@ class Receptionist:
             self._flag_urgent(match.keyword)
             content += (
                 f"\n\n[System: urgent keyword detected ({match.keyword}). The owner has been texted. "
-                "Offer to connect the caller to the owner right now.]"
+                + ("Offer to connect the caller to the owner right now.]" if self.channel == "phone" else
+                   f"Tell them to call the shop right now at {shop_phone(self.shop)}.]")
             )
 
         self.messages.append(self.backend.user_message(content))
@@ -252,7 +281,8 @@ class Receptionist:
             log.exception("Assistant failed on call %s (%s: %s); transferring to owner",
                           self.call_id, type(exc).__name__, str(exc)[:300])
             llm.record_error("phone assistant", exc)
-            say = "I'm sorry, I'm having trouble on my end. Let me connect you to the team."
+            say = ("I'm sorry, I'm having trouble on my end right now." if self.channel == "web"
+                   else "I'm sorry, I'm having trouble on my end. Let me connect you to the team.")
             self.action = "transfer"
             self.end_state = {"outcome": "transferred", "summary": "Assistant error; call sent to you."}
             self.messages.append(self.backend.assistant_message(say))
@@ -271,7 +301,7 @@ class Receptionist:
     def _run_model(self) -> str:
         spoken: list[str] = []
         for _ in range(MAX_TOOL_ROUNDS):
-            step = self.backend.step(build_system_prompt(self.shop), self._tools(), self.messages)
+            step = self.backend.step(build_system_prompt(self.shop, self.channel), self._tools(), self.messages)
             if step.refused:
                 # The model declined: end politely and have the owner call back.
                 self.end_state = {"outcome": "message_taken", "summary": "Caller needs a callback."}
@@ -398,14 +428,20 @@ class Receptionist:
             self.conn,
             self.shop,
             self.shop["owner_phone"],
-            f"URGENT call now from {pretty_phone(self.caller_phone)}: {what}. "
-            "The assistant is offering to transfer them to you.",
+            (f"URGENT website chat: {what}. The visitor was told to call you now; see the dashboard "
+             "for their details." if self.channel == "web" else
+             f"URGENT call now from {pretty_phone(self.caller_phone)}: {what}. "
+             "The assistant is offering to transfer them to you."),
             to_owner=True,
         )
 
     def _life_safety(self, match: emergency.EmergencyMatch, content: str) -> Turn:
         self._flag_urgent(match.keyword)
-        say = f"{match.caller_instructions} I'm connecting you to the owner right now."
+        if self.channel == "web":
+            say = (f"{match.caller_instructions} Then please call us right now at {shop_phone(self.shop)}. "
+                   "We've alerted the owner.")
+        else:
+            say = f"{match.caller_instructions} I'm connecting you to the owner right now."
         self.messages.append(self.backend.user_message(content))
         self.messages.append(self.backend.assistant_message(say))
         self.transcript.append({"role": "ai", "text": say})
