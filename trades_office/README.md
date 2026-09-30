@@ -79,6 +79,12 @@ How it behaves:
 - Emergencies (gas, CO, sparks) get safety instructions plus "call the shop now at …", and the owner gets an urgent text.
 - Rate limited per visitor, counted toward the shop's monthly limit, and offline (with the shop's number) when the shop is paused or cancelled.
 
+## Phone line for each shop
+
+On a shop's dashboard page, under **Phone line**, type an area code and click **Get a phone number**. The app buys a local number on your Twilio account, points its call and text webhooks at this server, and saves it as the shop's assistant line (about $1.15/month plus usage on Twilio). There's also **Connect** for a number already on your Twilio account, and **Release number** to give one back.
+
+The shop keeps its own number and forwards calls to the assistant line: all calls after hours, or just the ones they don't answer. The page lists the forwarding codes for Verizon, AT&T, T-Mobile and office phone systems. This needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and a public https address. On Render, use a paid instance for real calls so the server never sleeps.
+
 ## The website
 
 - `/` home page, `/privacy`, `/terms`, `/thanks`. The privacy policy includes the SMS wording Twilio's A2P 10DLC review looks for.

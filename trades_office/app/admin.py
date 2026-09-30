@@ -5,6 +5,7 @@ import secrets
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -12,7 +13,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import calls, db, followups, reports, scheduling
+from . import calls, db, followups, phone_numbers, reports, scheduling
 from .config import get_settings
 from .plans import PLANS, TRIAL_DAYS, get_plan
 from .receptionist import Receptionist, greeting, normalize_phone, pretty_phone
@@ -126,7 +127,7 @@ async def create_shop(request: Request):
 
 
 @router.get("/shops/{shop_id}", response_class=HTMLResponse)
-def shop_detail(request: Request, shop_id: int):
+def shop_detail(request: Request, shop_id: int, phone_ok: str = "", phone_err: str = ""):
     now = db.utcnow()
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id) or _404()
@@ -148,6 +149,9 @@ def shop_detail(request: Request, shop_id: int):
             base_url=get_settings().public_base_url,
             widget_snippet=widget_snippet(shop["widget_key"]) if shop["widget_key"] else "",
             widget_link=widget_link(shop["widget_key"]) if shop["widget_key"] else "",
+            twilio_enabled=get_settings().twilio_enabled,
+            phone_ok=phone_ok[:300],
+            phone_err=phone_err[:300],
         )
     return _render(request, "shop.html", **ctx)
 
@@ -168,6 +172,66 @@ async def update_shop(request: Request, shop_id: int):
     with db.session() as conn:
         db.update(conn, "shops", shop_id, values)
     return RedirectResponse(f"/admin/shops/{shop_id}", status_code=303)
+
+
+def _back_to_shop(shop_id: int, **msg) -> RedirectResponse:
+    return RedirectResponse(f"/admin/shops/{shop_id}?{urlencode(msg)}#phone", status_code=303)
+
+
+def _number_taken(conn, number: str, shop_id: int) -> bool:
+    other = db.shop_by_number(conn, number)
+    return other is not None and other["id"] != shop_id
+
+
+@router.post("/shops/{shop_id}/phone/buy")
+def buy_phone_number(shop_id: int, area_code: str = Form("")):
+    with db.session() as conn:
+        shop = db.get(conn, "shops", shop_id) or _404()
+    if shop["twilio_number"]:
+        return _back_to_shop(shop_id, phone_err="This shop already has an assistant number. Release it first.")
+    try:
+        number = phone_numbers.buy_number(area_code, shop["name"])
+    except phone_numbers.PhoneNumberError as exc:
+        return _back_to_shop(shop_id, phone_err=str(exc))
+    with db.session() as conn:
+        db.update(conn, "shops", shop_id, {"twilio_number": number})
+    return _back_to_shop(shop_id, phone_ok=f"Done: {pretty_phone(number)} is now this shop's assistant line "
+                                           "and is ready to take calls and texts.")
+
+
+@router.post("/shops/{shop_id}/phone/connect")
+def connect_phone_number(shop_id: int, number: str = Form("")):
+    e164 = normalize_phone(number)
+    if not e164:
+        return _back_to_shop(shop_id, phone_err="Enter a 10-digit US phone number.")
+    with db.session() as conn:
+        shop = db.get(conn, "shops", shop_id) or _404()
+        if _number_taken(conn, e164, shop_id):
+            return _back_to_shop(shop_id, phone_err=f"{pretty_phone(e164)} is already used by another shop.")
+    try:
+        e164 = phone_numbers.connect_number(e164, shop["name"])
+    except phone_numbers.PhoneNumberError as exc:
+        return _back_to_shop(shop_id, phone_err=str(exc))
+    with db.session() as conn:
+        db.update(conn, "shops", shop_id, {"twilio_number": e164})
+    return _back_to_shop(shop_id, phone_ok=f"Connected: calls and texts to {pretty_phone(e164)} now go to "
+                                           "this shop's assistant.")
+
+
+@router.post("/shops/{shop_id}/phone/release")
+def release_phone_number(shop_id: int):
+    with db.session() as conn:
+        shop = db.get(conn, "shops", shop_id) or _404()
+    if not shop["twilio_number"]:
+        return _back_to_shop(shop_id)
+    try:
+        phone_numbers.release_number(shop["twilio_number"])
+    except phone_numbers.PhoneNumberError as exc:
+        return _back_to_shop(shop_id, phone_err=str(exc))
+    with db.session() as conn:
+        db.update(conn, "shops", shop_id, {"twilio_number": None})
+    return _back_to_shop(shop_id, phone_ok=f"Released {pretty_phone(shop['twilio_number'])}. "
+                                           "It no longer rings the assistant or costs anything.")
 
 
 @router.get("/calls/{call_id}", response_class=HTMLResponse)

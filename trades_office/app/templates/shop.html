@@ -87,8 +87,65 @@
   {% endif %}
 </div>
 
-<div class="card"><h2>Twilio setup for this shop</h2>
+<div class="card" id="phone"><h2>Phone line</h2>
+  {% if phone_ok %}<p style="color:var(--ok)"><b>{{ phone_ok }}</b></p>{% endif %}
+  {% if phone_err %}<p style="color:var(--bad)"><b>{{ phone_err }}</b></p>{% endif %}
+  {% if shop.twilio_number %}
+  <p>Assistant line: <b style="font-size:20px">{{ shop.twilio_number|phone }}</b>. Calls and texts to this number are answered by the assistant.</p>
+  {% else %}
+  <p>This shop doesn't have an assistant number yet. Get one below; it's ready to take calls in about 10 seconds (about $1.15/month on Twilio, plus usage).</p>
+  {% endif %}
+  {% if not twilio_enabled %}
+  <p style="color:var(--warn)">Twilio isn't connected. Add <code>TWILIO_ACCOUNT_SID</code> and <code>TWILIO_AUTH_TOKEN</code> (from twilio.com/console) to the server's environment variables to turn on these buttons.</p>
+  {% endif %}
+  {% if base_url.startswith("http://localhost") or base_url.startswith("http://127.0.0.1") %}
+  <p style="color:var(--warn)">This server's address is {{ base_url }}, which Twilio can't reach. Set <code>PUBLIC_BASE_URL</code> to your live https address before buying numbers.</p>
+  {% endif %}
+
+  {% if not shop.twilio_number %}
+  <div class="row">
+    <form method="post" action="/admin/shops/{{ shop.id }}/phone/buy">
+      <label>Get a new number: area code</label>
+      <div style="display:flex;gap:8px"><input name="area_code" inputmode="numeric" maxlength="3" pattern="[0-9]{3}" placeholder="512" required style="max-width:110px">
+        <button {{ "disabled" if not twilio_enabled }}>Get a phone number</button></div>
+      <p class="muted">Buys a local number, connects it to the assistant, and saves it here.</p>
+    </form>
+    <form method="post" action="/admin/shops/{{ shop.id }}/phone/connect">
+      <label>Or connect a number already on your Twilio account</label>
+      <div style="display:flex;gap:8px"><input name="number" type="tel" placeholder="(512) 555-0100" required>
+        <button class="secondary" {{ "disabled" if not twilio_enabled }}>Connect</button></div>
+      <p class="muted">Use this for a number you bought or ported into Twilio yourself.</p>
+    </form>
+  </div>
+  {% else %}
+  <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/phone/connect">
+    <input type="hidden" name="number" value="{{ shop.twilio_number }}">
+    <button class="secondary" {{ "disabled" if not twilio_enabled }}>Re-connect webhooks</button>
+  </form>
+  <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/phone/release"
+        onsubmit="return confirm('Release {{ shop.twilio_number|phone }}? Calls to it will stop working and the number goes back to Twilio. This cannot be undone.')">
+    <button class="secondary" style="color:var(--bad);border-color:var(--bad)" {{ "disabled" if not twilio_enabled }}>Release number</button>
+  </form>
+
+  <h3>Send the shop's calls to the assistant</h3>
+  <p>The shop keeps its own number. Calls forward to the assistant line, so customers never see a new number.</p>
+  <ul>
+    <li><b>After hours only (Starter):</b> the owner forwards all calls to <b>{{ shop.twilio_number|phone }}</b> when they close and turns it off when they open. Or send it the calls they don't answer (below).</li>
+    <li><b>Calls they don't answer (Pro/Plus):</b> "no-answer" or "busy" forwarding to <b>{{ shop.twilio_number|phone }}</b>.</li>
+  </ul>
+  <table>
+    <tr><th>Carrier</th><th>Forward all calls</th><th>Forward unanswered / busy</th><th>Turn off</th></tr>
+    <tr><td>Verizon</td><td><code>*72{{ shop.twilio_number[-10:] }}</code></td><td><code>*71{{ shop.twilio_number[-10:] }}</code></td><td><code>*73</code></td></tr>
+    <tr><td>AT&amp;T</td><td><code>*21*{{ shop.twilio_number[-10:] }}#</code></td><td><code>*004*{{ shop.twilio_number[-10:] }}#</code></td><td><code>#21#</code> / <code>##004#</code></td></tr>
+    <tr><td>T-Mobile</td><td><code>**21*1{{ shop.twilio_number[-10:] }}#</code></td><td><code>**004*1{{ shop.twilio_number[-10:] }}#</code></td><td><code>##21#</code> / <code>##004#</code></td></tr>
+    <tr><td>Landline / office phone system</td><td colspan="3">Most use <code>*72</code> + the number (off: <code>*73</code>). For RingCentral, Grasshopper, Google Voice, Nextiva etc., set "forward unanswered calls" to {{ shop.twilio_number|phone }} in the phone system's settings.</td></tr>
+  </table>
+  <p class="muted">Dial the code from the shop's phone and press call. After setting it up, call the shop's number from another phone to test it. Codes can vary by plan; the carrier's support line can confirm.</p>
+  {% endif %}
+
+  <details><summary class="muted">Manual Twilio setup</summary>
   <p>Voice webhook: <code>{{ base_url }}/voice/incoming</code> (POST) · Status callback: <code>{{ base_url }}/voice/status</code><br>
      Messaging webhook: <code>{{ base_url }}/sms/incoming</code> (POST)</p>
+  </details>
 </div>
 {% endblock %}
