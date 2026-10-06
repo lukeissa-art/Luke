@@ -140,3 +140,54 @@ def test_release_number(client, conn, twilio_on):
     assert "phone_ok" in r.headers["location"]
     assert twilio_on.deleted == ["PN0"]
     assert db.get(conn, "shops", shop["id"])["twilio_number"] is None
+
+
+def _fallback_twiml(url):
+    from urllib.parse import parse_qs, urlparse
+
+    assert url.startswith("https://twimlets.com/echo?")
+    return parse_qs(urlparse(url).query)["Twiml"][0]
+
+
+def test_new_numbers_fall_back_to_the_owner_if_the_app_is_down(client, conn, twilio_on):
+    shop = make_shop(conn, twilio_number=None, name="Riverside Plumbing & Drain")
+    _post(client, f"/admin/shops/{shop['id']}/phone/buy", area_code="512")
+    created = twilio_on.created[0]
+    assert created["voice_fallback_method"] == "GET"
+    twiml = _fallback_twiml(created["voice_fallback_url"])
+    assert "<Dial timeout=\"25\">+15125550100</Dial>" in twiml
+    assert "Riverside Plumbing &amp; Drain" in twiml  # valid XML even with special characters
+    import xml.dom.minidom
+    xml.dom.minidom.parseString(twiml)
+
+    page = client.get(f"/admin/shops/{shop['id']}", auth=AUTH).text
+    assert "Backup: if this app is ever down" in page
+
+
+def test_no_fallback_without_an_owner_phone(conn, twilio_on):
+    from app import phone_numbers
+
+    shop = make_shop(conn, owner_phone="")
+    assert phone_numbers.fallback_url(shop) == ""
+    assert "voice_fallback_url" not in phone_numbers.webhooks(shop)
+
+
+def _edit_form(shop, **changes):
+    form = {k: shop[k] or "" for k in ("name", "trade", "owner_name", "owner_phone", "twilio_number", "timezone",
+                                        "service_area", "services", "pricing_notes", "plan")}
+    form.update(mon_open="08:00", mon_close="17:00", slot_minutes="120", avg_job_value="450", **changes)
+    return form
+
+
+def test_changing_the_owners_phone_updates_the_fallback(client, conn, twilio_on):
+    shop = make_shop(conn, twilio_number="+15125550188")
+    client.post(f"/admin/shops/{shop['id']}", data=_edit_form(shop, owner_phone="(512) 555-0177"),
+                auth=AUTH, follow_redirects=False)
+    sid, kw = twilio_on.updated[-1]
+    assert sid == "PN0" and "+15125550177" in _fallback_twiml(kw["voice_fallback_url"])
+
+    # Saving without touching the phone or name doesn't call Twilio again
+    before = len(twilio_on.updated)
+    shop = db.get(conn, "shops", shop["id"])
+    client.post(f"/admin/shops/{shop['id']}", data=_edit_form(shop, services="drains"), auth=AUTH)
+    assert len(twilio_on.updated) == before
