@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from . import calls, db
 from .config import get_settings
 from .receptionist import Receptionist, greeting, shop_phone
+from .streaming import stream_reply, wants_stream
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -69,11 +70,13 @@ async def chat_say(widget_key: str, request: Request):
     if _rate_limited("chat:" + _client_ip(request)):
         return JSONResponse({"error": "Too many messages for now. Please call us instead."}, status_code=429)
     body = await request.json()
+    if wants_stream(request):
+        return stream_reply(lambda on_text: _chat_say(widget_key, body, on_text))
     # The AI call takes seconds: run it off the event loop so the server stays responsive.
     return await run_in_threadpool(_chat_say, widget_key, body)
 
 
-def _chat_say(widget_key: str, body: dict):
+def _chat_say(widget_key: str, body: dict, on_text=None):
     text = str(body.get("text", "")).strip()[:MAX_CHARS]
     if not text:
         return JSONResponse({"error": "Type a message first."}, status_code=400)
@@ -100,7 +103,7 @@ def _chat_say(widget_key: str, body: dict):
             return JSONResponse({"say": "This chat has ended. Send a new message to start another.",
                                  "action": "hangup", "chat_id": None})
 
-        turn = Receptionist(conn, shop, call).respond(text)
+        turn = Receptionist(conn, shop, call).respond(text, on_text)
         say = turn.say
         if turn.action == "transfer":
             # A website visitor can't be put through: make sure they have the number to call.

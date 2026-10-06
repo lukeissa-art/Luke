@@ -17,6 +17,7 @@ from . import calls, db, followups, phone_numbers, reports, scheduling
 from .config import get_settings
 from .plans import PLANS, TRIAL_DAYS, get_plan
 from .receptionist import Receptionist, greeting, normalize_phone, pretty_phone
+from .streaming import stream_reply, wants_stream
 from .widget import chat_link as widget_link, snippet as widget_snippet
 
 security = HTTPBasic()
@@ -343,10 +344,12 @@ def demo(request: Request, shop_id: int):
 @router.post("/shops/{shop_id}/demo/say")
 async def demo_say(shop_id: int, request: Request):
     body = await request.json()
+    if wants_stream(request):
+        return stream_reply(lambda on_text: _demo_say(shop_id, body, on_text))
     return await run_in_threadpool(_demo_say, shop_id, body)  # AI call: keep the event loop free
 
 
-def _demo_say(shop_id: int, body: dict):
+def _demo_say(shop_id: int, body: dict, on_text=None):
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id) or _404()
         call = db.get(conn, "calls", int(body["call_id"])) if body.get("call_id") else None
@@ -354,7 +357,7 @@ def _demo_say(shop_id: int, body: dict):
             call = calls.start_call(conn, shop, f"demo-{uuid.uuid4().hex[:12]}", "+15555550100")
         if call["owner_notified"]:
             return JSONResponse({"say": "(this test call has ended)", "action": "hangup", "call_id": call["id"]})
-        turn = Receptionist(conn, shop, call).respond(body.get("text", ""))
+        turn = Receptionist(conn, shop, call).respond(body.get("text", ""), on_text)
         if turn.action != "continue":
             calls.finalize_call(conn, call["id"],
                                 status="transferred" if turn.action == "transfer" else "completed")

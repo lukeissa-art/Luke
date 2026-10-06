@@ -10,7 +10,7 @@ import re
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from .config import get_settings
 
@@ -41,6 +41,32 @@ class Step:
     refused: bool = False
 
 
+class TextSink:
+    """Receives reply text as the model writes it (for streaming chat replies).
+
+    Separate pieces of speech (text blocks, or replies before and after a tool call) are
+    joined with a space, the same way the finished reply is.
+    """
+
+    def __init__(self, emit: Callable[[str], None]):
+        self.emit = emit
+        self.started = False
+        self.gap = False
+
+    def segment(self) -> None:
+        """A new piece of speech starts here."""
+        self.gap = self.started
+
+    def __call__(self, delta: str) -> None:
+        if not delta:
+            return
+        if self.gap:
+            self.emit(" ")
+            self.gap = False
+        self.started = True
+        self.emit(delta)
+
+
 class AnthropicBackend:
     name = "anthropic"
 
@@ -57,22 +83,35 @@ class AnthropicBackend:
     def assistant_message(self, text: str) -> dict[str, Any]:
         return {"role": "assistant", "content": text}
 
-    def step(self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]) -> Step:
+    def step(self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]],
+             on_text: TextSink | None = None) -> Step:
         s = get_settings()
         kwargs: dict[str, Any] = {}
         if s.anthropic_fallbacks:
             kwargs = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
         if tools:
             kwargs["tools"] = tools
-        response = self.client.beta.messages.create(
+        kwargs.update(
             model=s.anthropic_model,
             max_tokens=8192,
             system=system,
             messages=messages,
             output_config={"effort": s.anthropic_effort},
             cache_control={"type": "ephemeral"},
-            **kwargs,
         )
+        if on_text is not None and hasattr(self.client.beta.messages, "stream"):
+            # Stream so the words reach the chat window while Claude is still writing.
+            with self.client.beta.messages.stream(**kwargs) as stream:
+                for event in stream:
+                    if event.type == "content_block_start" and event.content_block.type == "text":
+                        on_text.segment()
+                    elif event.type == "text":
+                        on_text(event.text)
+                response = stream.get_final_message()
+        else:
+            response = self.client.beta.messages.create(**kwargs)
+            if on_text is not None:
+                _emit_all(on_text, response.content)
         if response.stop_reason == "refusal":
             return Step(refused=True)
         blocks = [_dump(b) for b in response.content if b.type != "fallback"]
@@ -156,7 +195,16 @@ class GeminiBackend:
     def assistant_message(self, text: str) -> dict[str, Any]:
         return {"role": "model", "parts": [{"text": text}]}
 
-    def step(self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]) -> Step:
+    def step(self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]],
+             on_text: TextSink | None = None) -> Step:
+        step = self._step(system, tools, messages)
+        if on_text is not None:  # not streamed: the whole reply arrives at once
+            for text in step.spoken:
+                on_text.segment()
+                on_text(text)
+        return step
+
+    def _step(self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]) -> Step:
         from google.genai import types
 
         declarations = [
@@ -245,6 +293,14 @@ class GeminiBackend:
                 fr["id"] = r.call.id
             parts.append({"function_response": fr})
         return {"role": "user", "parts": parts}
+
+
+def _emit_all(on_text: TextSink, blocks: list[Any]) -> None:
+    """For a reply that wasn't streamed: hand over its text all at once."""
+    for b in blocks:
+        if b.type == "text" and b.text.strip():
+            on_text.segment()
+            on_text(b.text)
 
 
 def _dump(block: Any) -> dict[str, Any]:
