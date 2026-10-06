@@ -10,12 +10,47 @@
 const log = document.getElementById("log"), input = document.getElementById("t");
 let callId = null;
 function add(who, text) { const p = document.createElement("p"); p.innerHTML = "<b></b> "; p.firstChild.textContent = who + ":"; p.append(text); log.append(p); }
-function speak(text) { if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+function speak(text) { if ("speechSynthesis" in window && text.trim()) speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+// Reads a reply sent as server-sent events: onText gets each piece of text as the assistant
+// writes it; resolves with the final result.
+async function readReply(r, onText) {
+  if (!(r.headers.get("content-type") || "").includes("text/event-stream")) {
+    const d = await r.json(); d.status = r.status; return d;
+  }
+  const reader = r.body.getReader(), decoder = new TextDecoder();
+  let buf = "", result = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (!line.startsWith("data: ")) continue;
+      const ev = JSON.parse(line.slice(6));
+      if (ev.type === "text") onText(ev.text); else if (ev.type === "done") result = ev;
+    }
+  }
+  if (!result) throw new Error("The reply was cut off.");
+  return result;
+}
 async function send(text) {
   add("Caller", text); input.value = "";
-  const r = await fetch("/admin/shops/{{ shop.id }}/demo/say", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, call_id: callId})});
+  const r = await fetch("/admin/shops/{{ shop.id }}/demo/say", {method: "POST", headers: {"Content-Type": "application/json", Accept: "text/event-stream"}, body: JSON.stringify({text, call_id: callId})});
   if (!r.ok) { add("System", "Error " + r.status); return; }
-  const d = await r.json(); callId = d.call_id; add("Assistant", d.say); speak(d.say);
+  // Show the words as they arrive and start speaking each sentence as soon as it's complete.
+  let line = null, streamed = "", spoken = 0;
+  const d = await readReply(r, (t) => {
+    if (!line) { add("Assistant", ""); line = log.lastChild.lastChild; }
+    streamed += t; line.textContent = streamed;
+    const end = streamed.search(/[.!?]\s[^.!?]*$/);
+    if (end >= spoken) { speak(streamed.slice(spoken, end + 1)); spoken = end + 1; }
+  });
+  if (d.status !== 200) { add("System", d.error || "Error " + d.status); return; }
+  callId = d.call_id;
+  if (!line) { add("Assistant", d.say); speak(d.say); }
+  else if (d.say === streamed.trim()) { line.textContent = d.say; speak(streamed.slice(spoken)); }
+  else { line.textContent = d.say; if ("speechSynthesis" in window) speechSynthesis.cancel(); speak(d.say); }
   if (d.action !== "continue") add("System", d.action === "transfer" ? "(call transferred to the owner's cell)" : "(call ended)");
 }
 document.getElementById("f").onsubmit = e => { e.preventDefault(); if (input.value.trim()) send(input.value.trim()); };

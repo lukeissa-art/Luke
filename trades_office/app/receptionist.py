@@ -9,7 +9,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from . import db, emergency, llm, scheduling, sms
@@ -248,7 +248,10 @@ class Receptionist:
 
     # --- public -------------------------------------------------------------------------
 
-    def respond(self, caller_text: str) -> Turn:
+    def respond(self, caller_text: str, on_text: Callable[[str], None] | None = None) -> Turn:
+        """One caller turn. With on_text, the reply is also handed over piece by piece as the
+        model writes it (website chat). The returned Turn.say is always the final reply, which
+        can differ from the streamed text (e.g. when the model fails and the call is transferred)."""
         caller_text = caller_text.strip()
         self.transcript.append({"role": "caller", "text": caller_text})
         content = caller_text or "(the caller said nothing or was inaudible)"
@@ -276,7 +279,7 @@ class Receptionist:
 
         self.messages.append(self.backend.user_message(content))
         try:
-            say = self._run_model()
+            say = self._run_model(llm.TextSink(on_text) if on_text else None)
         except Exception as exc:  # never leave a live caller hanging: any AI failure goes to a human
             log.exception("Assistant failed on call %s (%s: %s); transferring to owner",
                           self.call_id, type(exc).__name__, str(exc)[:300])
@@ -298,10 +301,12 @@ class Receptionist:
             tools = [TOOL_CHECK_AVAILABILITY, TOOL_BOOK, *tools]
         return tools
 
-    def _run_model(self) -> str:
+    def _run_model(self, sink: llm.TextSink | None = None) -> str:
         spoken: list[str] = []
+        stream = {"on_text": sink} if sink else {}
         for _ in range(MAX_TOOL_ROUNDS):
-            step = self.backend.step(build_system_prompt(self.shop, self.channel), self._tools(), self.messages)
+            step = self.backend.step(build_system_prompt(self.shop, self.channel), self._tools(), self.messages,
+                                     **stream)
             if step.refused:
                 # The model declined: end politely and have the owner call back.
                 self.end_state = {"outcome": "message_taken", "summary": "Caller needs a callback."}

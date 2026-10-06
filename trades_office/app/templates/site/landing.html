@@ -413,6 +413,29 @@
   const chat = document.getElementById("chat"), input = document.getElementById("chat-input");
   const status = document.getElementById("demo-status");
   let callId = null, busy = false, ended = false;
+  // Reads a reply sent as server-sent events: onText gets each piece of text as the assistant
+  // writes it; resolves with the final result (plain JSON replies, like errors, work too).
+  async function readReply(r, onText) {
+    if (!(r.headers.get("content-type") || "").includes("text/event-stream")) {
+      const d = await r.json(); d.status = r.status; return d;
+    }
+    const reader = r.body.getReader(), decoder = new TextDecoder();
+    let buf = "", result = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (!line.startsWith("data: ")) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === "text") onText(ev.text); else if (ev.type === "done") result = ev;
+      }
+    }
+    if (!result) throw new Error("The reply was cut off.");
+    return result;
+  }
   function add(kind, text) {
     const div = document.createElement("div"); div.className = "msg " + kind; div.textContent = text;
     chat.append(div); chat.scrollTop = chat.scrollHeight; return div;
@@ -428,12 +451,19 @@
     }
     busy = true; status.textContent = "assistant is talking…";
     const wait = add("sys", "…");
+    let bubble = null;
     try {
-      const r = await fetch("/demo/say", { method: "POST", headers: { "Content-Type": "application/json" },
+      const r = await fetch("/demo/say", { method: "POST",
+                                          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
                                           body: JSON.stringify({ text, call_id: callId }) });
-      const d = await r.json(); wait.remove();
-      if (!r.ok) { add("sys", d.error || "The demo isn't available right now."); return; }
-      callId = d.call_id; add("ai", d.say);
+      const d = await readReply(r, (t) => {
+        if (!bubble) { wait.remove(); bubble = add("ai", ""); }
+        bubble.textContent += t; chat.scrollTop = chat.scrollHeight;
+      });
+      wait.remove();
+      if (d.status !== 200) { if (bubble) bubble.remove(); add("sys", d.error || "The demo isn't available right now."); return; }
+      callId = d.call_id;
+      if (bubble) bubble.textContent = d.say; else add("ai", d.say);
       if (d.action !== "continue") {
         ended = true;
         add("sys", d.action === "transfer" ? "Call transferred to the owner's cell. Type again to start a new call." : "Call ended. Type again to start a new call.");

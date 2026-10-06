@@ -15,6 +15,7 @@ from . import calls, db, sms
 from .config import get_settings
 from .plans import PLANS, SETUP_FEE, TRIAL_DAYS
 from .receptionist import Receptionist, greeting, normalize_phone
+from .streaming import stream_reply, wants_stream
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -128,12 +129,14 @@ async def public_demo(request: Request):
         return JSONResponse({"error": "You've reached the demo limit for now. Start a free trial to keep going."},
                             status_code=429)
     body = await request.json()
+    if wants_stream(request):
+        return stream_reply(lambda on_text: _public_demo(shop_id, body, on_text))
     # The AI call takes seconds; run it off the event loop so the server (and its health
     # check) keeps answering other requests meanwhile.
     return await run_in_threadpool(_public_demo, shop_id, body)
 
 
-def _public_demo(shop_id: int, body: dict):
+def _public_demo(shop_id: int, body: dict, on_text=None):
     text = str(body.get("text", ""))[:DEMO_MAX_CHARS]
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id)
@@ -150,7 +153,7 @@ def _public_demo(shop_id: int, body: dict):
             calls.finalize_call(conn, call["id"])
             return JSONResponse({"say": "That's the end of this demo call. Start a new one anytime.",
                                  "action": "hangup", "call_id": call["id"]})
-        turn = Receptionist(conn, shop, call).respond(text)
+        turn = Receptionist(conn, shop, call).respond(text, on_text)
         if turn.action != "continue":
             calls.finalize_call(conn, call["id"])
     return JSONResponse({"say": turn.say, "action": turn.action, "call_id": call["id"]})
