@@ -6,6 +6,8 @@ text webhooks at this app, and returns it so it can be saved as the shop's assis
 
 import logging
 import re
+from urllib.parse import urlencode
+from xml.sax.saxutils import escape
 
 from . import sms
 from .config import get_settings
@@ -17,9 +19,25 @@ class PhoneNumberError(Exception):
     """A problem worth showing to whoever clicked the button."""
 
 
-def webhooks() -> dict[str, str]:
+# Twilio-hosted "echo" Twimlet: returns the TwiML we give it. Used as the number's fallback URL,
+# so calls still reach the owner when this app is down (outage, bad deploy, out of AI credit).
+TWIMLET_ECHO = "https://twimlets.com/echo"
+
+
+def fallback_url(shop) -> str:
+    """Where Twilio sends a call if this app doesn't answer: straight to the owner's phone."""
+    owner = (shop["owner_phone"] or "").strip()
+    if not owner.startswith("+"):
+        return ""
+    twiml = (f'<Response><Say voice="{escape(get_settings().tts_voice, {chr(34): "&quot;"})}">'
+             f'Thanks for calling {escape(shop["name"])}. Connecting you now.</Say>'
+             f'<Dial timeout="25">{escape(owner)}</Dial></Response>')
+    return f"{TWIMLET_ECHO}?{urlencode({'Twiml': twiml})}"
+
+
+def webhooks(shop=None) -> dict[str, str]:
     base = get_settings().public_base_url
-    return {
+    hooks = {
         "voice_url": f"{base}/voice/incoming",
         "voice_method": "POST",
         "status_callback": f"{base}/voice/status",
@@ -27,6 +45,9 @@ def webhooks() -> dict[str, str]:
         "sms_url": f"{base}/sms/incoming",
         "sms_method": "POST",
     }
+    if shop is not None and fallback_url(shop):
+        hooks.update(voice_fallback_url=fallback_url(shop), voice_fallback_method="GET")
+    return hooks
 
 
 def _client():
@@ -40,7 +61,7 @@ def _twilio_message(exc: Exception) -> str:
     return getattr(exc, "msg", None) or str(exc) or exc.__class__.__name__
 
 
-def buy_number(area_code: str, shop_name: str) -> str:
+def buy_number(area_code: str, shop) -> str:
     """Buy a local voice + SMS number in the area code and connect it. Returns it in E.164 form."""
     area_code = re.sub(r"\D", "", area_code or "")
     if len(area_code) != 3:
@@ -57,11 +78,12 @@ def buy_number(area_code: str, shop_name: str) -> str:
                                "Try a nearby area code.")
     try:
         bought = client.incoming_phone_numbers.create(
-            phone_number=found[0].phone_number, friendly_name=f"{shop_name} assistant"[:64], **webhooks())
+            phone_number=found[0].phone_number, friendly_name=f"{shop['name']} assistant"[:64],
+            **webhooks(shop))
     except Exception as exc:
         log.exception("Twilio number purchase failed")
         raise PhoneNumberError(f"Twilio couldn't buy the number: {_twilio_message(exc)}") from exc
-    log.info("Bought %s for %s", bought.phone_number, shop_name)
+    log.info("Bought %s for %s", bought.phone_number, shop["name"])
     return bought.phone_number
 
 
@@ -74,7 +96,7 @@ def _find_owned(client, number: str):
     return owned[0] if owned else None
 
 
-def connect_number(number: str, shop_name: str) -> str:
+def connect_number(number: str, shop) -> str:
     """Point a number already on our Twilio account at this app. `number` must be E.164."""
     client = _client()
     owned = _find_owned(client, number)
@@ -82,8 +104,8 @@ def connect_number(number: str, shop_name: str) -> str:
         raise PhoneNumberError(f"{number} isn't on your Twilio account. Buy it (or port it in) on Twilio "
                                "first, or use \"Get a new number\" instead.")
     try:
-        client.incoming_phone_numbers(owned.sid).update(friendly_name=f"{shop_name} assistant"[:64],
-                                                        **webhooks())
+        client.incoming_phone_numbers(owned.sid).update(friendly_name=f"{shop['name']} assistant"[:64],
+                                                        **webhooks(shop))
     except Exception as exc:
         log.exception("Twilio number update failed")
         raise PhoneNumberError(f"Twilio couldn't update the number: {_twilio_message(exc)}") from exc

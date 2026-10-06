@@ -151,6 +151,7 @@ def shop_detail(request: Request, shop_id: int, phone_ok: str = "", phone_err: s
             widget_snippet=widget_snippet(shop["widget_key"]) if shop["widget_key"] else "",
             widget_link=widget_link(shop["widget_key"]) if shop["widget_key"] else "",
             twilio_enabled=get_settings().twilio_enabled,
+            fallback_url=phone_numbers.fallback_url(shop),
             phone_ok=phone_ok[:300],
             phone_err=phone_err[:300],
             google_ready=scheduling.google_configured(),
@@ -175,7 +176,16 @@ async def update_shop(request: Request, shop_id: int):
     if form.get("status"):
         values["status"] = form["status"]
     with db.session() as conn:
+        before = db.get(conn, "shops", shop_id) or _404()
         db.update(conn, "shops", shop_id, values)
+        shop = db.get(conn, "shops", shop_id)
+    if (shop["twilio_number"] and get_settings().twilio_enabled
+            and (shop["owner_phone"], shop["name"]) != (before["owner_phone"], before["name"])):
+        # Keep the "app is down" fallback pointing at the owner's current phone.
+        try:
+            await run_in_threadpool(phone_numbers.connect_number, shop["twilio_number"], shop)
+        except phone_numbers.PhoneNumberError as exc:
+            return _back_to_shop(shop_id, phone_err=f"Saved, but couldn't update the phone line: {exc}")
     return RedirectResponse(f"/admin/shops/{shop_id}", status_code=303)
 
 
@@ -195,7 +205,7 @@ def buy_phone_number(shop_id: int, area_code: str = Form("")):
     if shop["twilio_number"]:
         return _back_to_shop(shop_id, phone_err="This shop already has an assistant number. Release it first.")
     try:
-        number = phone_numbers.buy_number(area_code, shop["name"])
+        number = phone_numbers.buy_number(area_code, shop)
     except phone_numbers.PhoneNumberError as exc:
         return _back_to_shop(shop_id, phone_err=str(exc))
     with db.session() as conn:
@@ -214,7 +224,7 @@ def connect_phone_number(shop_id: int, number: str = Form("")):
         if _number_taken(conn, e164, shop_id):
             return _back_to_shop(shop_id, phone_err=f"{pretty_phone(e164)} is already used by another shop.")
     try:
-        e164 = phone_numbers.connect_number(e164, shop["name"])
+        e164 = phone_numbers.connect_number(e164, shop)
     except phone_numbers.PhoneNumberError as exc:
         return _back_to_shop(shop_id, phone_err=str(exc))
     with db.session() as conn:

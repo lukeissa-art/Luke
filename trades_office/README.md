@@ -81,7 +81,7 @@ How it behaves:
 
 ## Phone line for each shop
 
-On a shop's dashboard page, under **Phone line**, type an area code and click **Get a phone number**. The app buys a local number on your Twilio account, points its call and text webhooks at this server, and saves it as the shop's assistant line (about $1.15/month plus usage on Twilio). There's also **Connect** for a number already on your Twilio account, and **Release number** to give one back.
+On a shop's dashboard page, under **Phone line**, type an area code and click **Get a phone number**. The app buys a local number on your Twilio account, points its call and text webhooks at this server, and saves it as the shop's assistant line (about $1.15/month plus usage on Twilio). There's also **Connect** for a number already on your Twilio account, and **Release number** to give one back. Every number also gets a backup: if this app is ever down, Twilio forwards calls straight to the owner's phone (via Twilio's hosted echo Twimlet). Numbers connected earlier get it when you click **Re-connect webhooks**.
 
 The shop keeps its own number and forwards calls to the assistant line: all calls after hours, or just the ones they don't answer. The page lists the forwarding codes for Verizon, AT&T, T-Mobile and office phone systems. This needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and a public https address. On Render, use a paid instance for real calls so the server never sleeps.
 

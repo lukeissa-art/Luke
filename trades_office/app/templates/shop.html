@@ -126,6 +126,11 @@
   {% if phone_err %}<p style="color:var(--bad)"><b>{{ phone_err }}</b></p>{% endif %}
   {% if shop.twilio_number %}
   <p>Assistant line: <b style="font-size:20px">{{ shop.twilio_number|phone }}</b>. Calls and texts to this number are answered by the assistant.</p>
+  {% if fallback_url %}
+  <p class="muted">Backup: if this app is ever down, calls to this number ring the owner's phone, {{ shop.owner_phone|phone }}, instead. <a href="{{ fallback_url }}" target="_blank" rel="noopener">Check the backup</a> (shows a short XML page if it's working). Numbers connected before this backup existed get it when you click Re-connect webhooks.</p>
+  {% else %}
+  <p style="color:var(--warn)">No backup: add the owner's phone number in <a href="/admin/shops/{{ shop.id }}/edit">Edit setup</a> so calls reach them if this app is ever down, then click Re-connect webhooks.</p>
+  {% endif %}
   {% else %}
   <p>This shop doesn't have an assistant number yet. Get one below; it's ready to take calls in about 10 seconds (about $1.15/month on Twilio, plus usage).</p>
   {% endif %}
