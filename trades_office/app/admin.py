@@ -127,7 +127,8 @@ async def create_shop(request: Request):
 
 
 @router.get("/shops/{shop_id}", response_class=HTMLResponse)
-def shop_detail(request: Request, shop_id: int, phone_ok: str = "", phone_err: str = ""):
+def shop_detail(request: Request, shop_id: int, phone_ok: str = "", phone_err: str = "",
+                cal_ok: str = "", cal_err: str = ""):
     now = db.utcnow()
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id) or _404()
@@ -152,6 +153,10 @@ def shop_detail(request: Request, shop_id: int, phone_ok: str = "", phone_err: s
             twilio_enabled=get_settings().twilio_enabled,
             phone_ok=phone_ok[:300],
             phone_err=phone_err[:300],
+            google_ready=scheduling.google_configured(),
+            google_email=scheduling.service_account_email(),
+            cal_ok=cal_ok[:300],
+            cal_err=cal_err[:400],
         )
     return _render(request, "shop.html", **ctx)
 
@@ -232,6 +237,36 @@ def release_phone_number(shop_id: int):
         db.update(conn, "shops", shop_id, {"twilio_number": None})
     return _back_to_shop(shop_id, phone_ok=f"Released {pretty_phone(shop['twilio_number'])}. "
                                            "It no longer rings the assistant or costs anything.")
+
+
+def _back_to_calendar(shop_id: int, **msg) -> RedirectResponse:
+    return RedirectResponse(f"/admin/shops/{shop_id}?{urlencode(msg)}#calendar", status_code=303)
+
+
+@router.post("/shops/{shop_id}/calendar")
+def connect_calendar(shop_id: int, calendar_id: str = Form("")):
+    calendar_id = calendar_id.strip()
+    if not calendar_id:
+        return _back_to_calendar(shop_id, cal_err="Enter the calendar ID (for most people, their Gmail address).")
+    with db.session() as conn:
+        db.get(conn, "shops", shop_id) or _404()
+    try:
+        result = scheduling.google_check(calendar_id)
+    except scheduling.CalendarError as exc:
+        return _back_to_calendar(shop_id, cal_err=str(exc))
+    except Exception as exc:  # network trouble, bad key: show it rather than a server error page
+        return _back_to_calendar(shop_id, cal_err=f"Couldn't reach Google Calendar: {exc}")
+    with db.session() as conn:
+        db.update(conn, "shops", shop_id, {"calendar_provider": "google", "google_calendar_id": calendar_id})
+    return _back_to_calendar(shop_id, cal_ok=result)
+
+
+@router.post("/shops/{shop_id}/calendar/disconnect")
+def disconnect_calendar(shop_id: int):
+    with db.session() as conn:
+        db.get(conn, "shops", shop_id) or _404()
+        db.update(conn, "shops", shop_id, {"calendar_provider": "local"})
+    return _back_to_calendar(shop_id, cal_ok="Disconnected. The assistant now books from this app's calendar only.")
 
 
 @router.get("/calls/{call_id}", response_class=HTMLResponse)

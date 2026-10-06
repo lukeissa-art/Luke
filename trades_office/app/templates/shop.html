@@ -1,5 +1,13 @@
 {% extends "base.html" %}
-{% block title %}{{ shop.name }}{% endblock %}
+{% block title %}{{ shop.name }}<script>
+    function copyField(id, btn) {
+      var el = document.getElementById(id); el.select();
+      (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(
+        function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); },
+        function () { document.execCommand && document.execCommand("copy"); });
+    }
+</script>
+{% endblock %}
 {% block content %}
 <h1>{{ shop.name }} <span class="pill {{ shop.status }}">{{ shop.status }}</span></h1>
 <p class="muted">{{ shop.trade }} · {{ plan.name }} plan · {{ month_calls }}/{{ plan.monthly_call_cap }} calls this month ·
@@ -44,6 +52,40 @@
   <p class="muted">Owners can also text <code>DONE 12</code> (the appointment #) to the assistant line to mark a job complete and trigger the review request.</p>
 </div>
 
+<div class="card" id="calendar"><h2>Google Calendar</h2>
+  {% if cal_ok %}<p style="color:var(--ok)"><b>{{ cal_ok }}</b></p>{% endif %}
+  {% if cal_err %}<p style="color:var(--bad)"><b>{{ cal_err }}</b></p>{% endif %}
+  {% set connected = shop.calendar_provider == "google" and shop.google_calendar_id %}
+  {% if connected %}
+  <p>Connected to <b>{{ shop.google_calendar_id }}</b>. Anything marked Busy on that calendar blocks those times, and jobs the assistant books are added to it.</p>
+  <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/calendar">
+    <input type="hidden" name="calendar_id" value="{{ shop.google_calendar_id }}">
+    <button class="secondary" {{ "disabled" if not google_ready }}>Test connection</button>
+  </form>
+  <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/calendar/disconnect"><button class="secondary">Disconnect</button></form>
+  {% else %}
+  <p>Connect the owner's Google Calendar so they can block off time on their phone and see every job the assistant books.</p>
+  {% endif %}
+
+  {% if not google_ready %}
+  <p style="color:var(--warn)">Google Calendar isn't set up on the server yet. Create a Google service account and paste its key into the <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> environment variable (steps in DEPLOY.md).</p>
+  {% else %}
+  {% if not connected %}
+  <ol>
+    <li>The owner opens Google Calendar on a computer → ⚙ Settings → their calendar under "Settings for my calendars" → <b>Share with specific people or groups</b> → <b>Add people</b>.</li>
+    <li>They add this email with permission <b>Make changes to events</b>:
+      <div style="display:flex;gap:8px;max-width:640px"><input readonly id="saemail" value="{{ google_email }}" onclick="this.select()"><button type="button" onclick="copyField('saemail', this)">Copy</button></div></li>
+    <li>Paste their calendar ID below (on the same settings page under "Integrate calendar"; for their main calendar it's just their Gmail address).</li>
+  </ol>
+  <form method="post" action="/admin/shops/{{ shop.id }}/calendar">
+    <div style="display:flex;gap:8px"><input name="calendar_id" placeholder="owner@gmail.com" required>
+      <button>Connect &amp; test</button></div>
+  </form>
+  {% endif %}
+  <p class="muted">Tell the owner: timed events block time automatically. All-day events (like "Vacation") only block time if they open the event and change <b>Free</b> to <b>Busy</b>.</p>
+  {% endif %}
+</div>
+
 <div class="card"><h2>Open quotes</h2>
   <form method="post" action="/admin/shops/{{ shop.id }}/quotes" class="row">
     <div><label>Customer</label><input name="customer_name"></div>
@@ -76,14 +118,6 @@
   <label>Or share a direct chat link (Google Business profile, Facebook, text messages)</label>
   <div style="display:flex;gap:8px"><input readonly id="chatlink" value="{{ widget_link }}" onclick="this.select()"><button type="button" onclick="copyField('chatlink', this)">Copy</button></div>
   <p class="muted">Optional: add <code>data-label="Book a visit"</code> or <code>data-color="#0f766e"</code> to the snippet to change the button's text or color. <a href="{{ widget_link }}" target="_blank" rel="noopener">Open the chat</a> to try it. Website chats show up under Recent calls, marked "website".</p>
-  <script>
-    function copyField(id, btn) {
-      var el = document.getElementById(id); el.select();
-      (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(
-        function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); },
-        function () { document.execCommand && document.execCommand("copy"); });
-    }
-  </script>
   {% endif %}
 </div>
 
@@ -148,4 +182,12 @@
      Messaging webhook: <code>{{ base_url }}/sms/incoming</code> (POST)</p>
   </details>
 </div>
+<script>
+    function copyField(id, btn) {
+      var el = document.getElementById(id); el.select();
+      (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(
+        function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); },
+        function () { document.execCommand && document.execCommand("copy"); });
+    }
+</script>
 {% endblock %}

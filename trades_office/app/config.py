@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     stripe_price_pro: str = ""
     stripe_price_plus: str = ""
 
-    # Google Calendar (service account JSON, shared with each shop's calendar)
+    # Google Calendar: a service account that each shop shares their calendar with. Paste the
+    # whole key file into GOOGLE_SERVICE_ACCOUNT_JSON (or point GOOGLE_SERVICE_ACCOUNT_FILE at it).
+    google_service_account_json: str = ""
     google_service_account_file: str = ""
 
     # Public website
