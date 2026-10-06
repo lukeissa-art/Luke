@@ -36,7 +36,7 @@ Every shop gets this, in person or on a video call. The answers go straight into
 **Scheduling**
 - [ ] Arrival window length (2 hours is standard)
 - [ ] Do they want it to book straight into the calendar, or take messages only for now?
-- [ ] Google Calendar? Have them share it with the service account email, then set **Calendar** to `google` and paste the calendar ID
+- [ ] Google Calendar? Have them share it with the email shown on the shop's **Google Calendar** card ("Make changes to events"), then click **Connect & test**. Remind them all-day events only block time when set to **Busy**.
 
 **Follow-up**
 - [ ] Google review link (Google Business Profile → "Ask for reviews")

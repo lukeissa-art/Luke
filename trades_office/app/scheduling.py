@@ -4,9 +4,12 @@ Availability = the shop's business hours, cut into fixed-length arrival windows,
 appointments already booked here, minus busy time on the shop's Google Calendar (if connected).
 """
 
+import base64
+import json
 import logging
 import sqlite3
 from datetime import date, datetime, time, timedelta
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from . import db
@@ -156,60 +159,134 @@ def book(
 
 
 # --- Google Calendar -------------------------------------------------------------------
-# Optional: install google-api-python-client + google-auth, create a service account,
-# and have each shop share their calendar with the service account's email.
+# One Google service account for the whole company. Each shop shares their calendar with the
+# service account's email ("Make changes to events"); the shop's calendar ID goes on its setup
+# page. Busy time on that calendar blocks slots, and jobs the assistant books are added to it.
+
+CALENDAR_API = "https://www.googleapis.com/calendar/v3"
+GOOGLE_TIMEOUT = 8  # seconds: this runs while a caller is waiting
+_google_session = None
 
 
-def _google_service():
-    from google.oauth2 import service_account  # type: ignore[import-not-found]
-    from googleapiclient.discovery import build  # type: ignore[import-not-found]
+class CalendarError(Exception):
+    """A problem worth showing on the dashboard."""
 
-    creds = service_account.Credentials.from_service_account_file(
-        get_settings().google_service_account_file,
-        scopes=["https://www.googleapis.com/auth/calendar"],
-    )
-    return build("calendar", "v3", credentials=creds, cache_discovery=False)
+
+def _service_account_info() -> dict | None:
+    s = get_settings()
+    raw = s.google_service_account_json.strip()
+    if raw:
+        if not raw.startswith("{"):
+            try:
+                raw = base64.b64decode(raw).decode()
+            except ValueError:
+                pass
+        try:
+            return json.loads(raw)
+        except ValueError as exc:
+            raise CalendarError("GOOGLE_SERVICE_ACCOUNT_JSON isn't valid JSON. Paste the whole "
+                                "key file, from { to }.") from exc
+    if s.google_service_account_file:
+        with open(s.google_service_account_file) as f:
+            return json.load(f)
+    return None
+
+
+def google_configured() -> bool:
+    s = get_settings()
+    return bool(s.google_service_account_json.strip() or s.google_service_account_file)
+
+
+def service_account_email() -> str:
+    try:
+        info = _service_account_info()
+    except (CalendarError, OSError, ValueError):
+        return ""
+    return (info or {}).get("client_email", "")
+
+
+def _google():
+    global _google_session
+    if _google_session is None:
+        from google.auth.transport.requests import AuthorizedSession
+        from google.oauth2 import service_account
+
+        info = _service_account_info()
+        if not info:
+            raise CalendarError("Google Calendar isn't set up: add GOOGLE_SERVICE_ACCOUNT_JSON to the "
+                                "server's environment variables.")
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/calendar"])
+        _google_session = AuthorizedSession(creds)
+    return _google_session
+
+
+def _call(method: str, path: str, **kwargs) -> dict:
+    resp = _google().request(method, CALENDAR_API + path, timeout=GOOGLE_TIMEOUT, **kwargs)
+    if resp.status_code >= 400:
+        try:
+            message = resp.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            message = resp.text[:200]
+        raise CalendarError(f"Google Calendar said: {message} (HTTP {resp.status_code})")
+    return resp.json() if resp.content else {}
+
+
+def _freebusy(calendar_id: str, start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    result = _call("POST", "/freeBusy", json={
+        "timeMin": start.isoformat(), "timeMax": end.isoformat(), "items": [{"id": calendar_id}]})
+    cal = result.get("calendars", {}).get(calendar_id, {})
+    if cal.get("errors"):
+        reason = cal["errors"][0].get("reason", "error")
+        if reason == "notFound":
+            raise CalendarError(f"Can't see calendar {calendar_id}. Share it with "
+                                f"{service_account_email() or 'the service account'} "
+                                "(\"Make changes to events\") and check the calendar ID.")
+        raise CalendarError(f"Google Calendar couldn't read {calendar_id}: {reason}")
+    return [(db.parse_iso(p["start"]), db.parse_iso(p["end"])) for p in cal.get("busy", [])]
 
 
 def google_busy(calendar_id: str, start: datetime, end: datetime):
+    """Busy periods on the shop's calendar. On any failure, fall back to local bookings only."""
     try:
-        result = (
-            _google_service()
-            .freebusy()
-            .query(
-                body={
-                    "timeMin": start.isoformat(),
-                    "timeMax": end.isoformat(),
-                    "items": [{"id": calendar_id}],
-                }
-            )
-            .execute()
-        )
+        return _freebusy(calendar_id, start, end)
     except Exception:
         log.exception("Google free/busy lookup failed for %s; using local bookings only", calendar_id)
         return []
-    periods = result["calendars"][calendar_id]["busy"]
-    return [(db.parse_iso(p["start"]), db.parse_iso(p["end"])) for p in periods]
 
 
 def google_create_event(calendar_id, start, end, *, summary, description, location) -> str | None:
     try:
-        event = (
-            _google_service()
-            .events()
-            .insert(
-                calendarId=calendar_id,
-                body={
-                    "summary": summary,
-                    "description": description,
-                    "location": location,
-                    "start": {"dateTime": start.isoformat()},
-                    "end": {"dateTime": end.isoformat()},
-                },
-            )
-            .execute()
-        )
+        event = _call("POST", f"/calendars/{quote(calendar_id, safe='')}/events", json={
+            "summary": summary,
+            "description": description,
+            "location": location,
+            "start": {"dateTime": start.isoformat()},
+            "end": {"dateTime": end.isoformat()},
+        })
         return event.get("id")
     except Exception:
         log.exception("Google event insert failed for %s; booking kept locally", calendar_id)
         return None
+
+
+def google_delete_event(calendar_id: str, event_id: str) -> None:
+    _call("DELETE", f"/calendars/{quote(calendar_id, safe='')}/events/{quote(event_id, safe='')}")
+
+
+def google_check(calendar_id: str, now: datetime | None = None) -> str:
+    """Prove we can read busy times and add events. Returns a summary; raises CalendarError."""
+    now = now or db.utcnow()
+    busy = _freebusy(calendar_id, now, now + timedelta(days=7))
+    start = now + timedelta(days=30)
+    try:
+        event = _call("POST", f"/calendars/{quote(calendar_id, safe='')}/events", json={
+            "summary": f"{get_settings().company_name} connection test (deleted automatically)",
+            "start": {"dateTime": start.isoformat()},
+            "end": {"dateTime": (start + timedelta(minutes=15)).isoformat()},
+        })
+    except CalendarError as exc:
+        raise CalendarError(f"Can read the calendar but can't add jobs to it. Change the sharing "
+                            f"setting to \"Make changes to events\". ({exc})") from exc
+    google_delete_event(calendar_id, event["id"])
+    return f"Connected. {len(busy)} busy block(s) in the next 7 days will be skipped when booking."

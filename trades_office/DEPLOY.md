@@ -65,6 +65,18 @@ In Render (or Railway), open the service → **Environment**, add `GEMINI_API_KE
 4. For each shop, buy a number and set its webhooks as listed at the bottom of the shop's dashboard page.
 5. Optional **demo line** for the website: buy one number, set its webhooks the same way, put that number into the demo shop's "Assistant phone number" in the dashboard, and set `DEMO_PHONE_NUMBER` so the home page shows it.
 
+## Turning on Google Calendar (free, one time, about 10 minutes)
+
+This lets each shop owner block off time in their own Google Calendar and see every job the assistant books. You set it up once for the whole company; each shop then just shares their calendar.
+
+1. Go to **console.cloud.google.com** (any Google account works) and create a project, e.g. "TradeDesk Calendar".
+2. **APIs & Services → Library**, search **Google Calendar API**, click **Enable**.
+3. **IAM & Admin → Service Accounts → Create service account**. Name it `tradedesk-calendar`, click **Done** (no roles needed).
+4. Click the new service account → **Keys → Add key → Create new key → JSON**. A file downloads.
+5. Open that file in a text editor, copy everything from `{` to `}`, and add it in Railway (or Render) → **Variables** as `GOOGLE_SERVICE_ACCOUNT_JSON`. Save; the app restarts.
+
+Then on each shop's dashboard page, the **Google Calendar** card shows the email to share with and has a **Connect & test** button. The Calendar API is free at this volume. Keep the key file private, like a password.
+
 ## Running costs to expect
 
 - Hosting: about $5 to $7/month
