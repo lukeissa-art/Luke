@@ -238,16 +238,25 @@ def connect_phone_number(shop_id: int, number: str = Form("")):
 def release_phone_number(shop_id: int):
     with db.session() as conn:
         shop = db.get(conn, "shops", shop_id) or _404()
-    if not shop["twilio_number"]:
+    number = shop["twilio_number"]
+    if not number:
         return _back_to_shop(shop_id)
-    try:
-        phone_numbers.release_number(shop["twilio_number"])
-    except phone_numbers.PhoneNumberError as exc:
-        return _back_to_shop(shop_id, phone_err=str(exc))
+    pretty = pretty_phone(number)
+    if not get_settings().twilio_enabled:
+        # Nothing to release on Twilio from here (e.g. the demo number): just take it off the shop.
+        msg = (f"Removed {pretty} from this shop. Twilio isn't connected, so if this number is on "
+               "your Twilio account, release it in the Twilio console to stop paying for it.")
+    else:
+        try:
+            released = phone_numbers.release_number(number)
+        except phone_numbers.PhoneNumberError as exc:
+            return _back_to_shop(shop_id, phone_err=str(exc))
+        msg = (f"Released {pretty}. It no longer rings the assistant or costs anything." if released else
+               f"Removed {pretty} from this shop. It wasn't on your Twilio account, so there was "
+               "nothing to release there.")
     with db.session() as conn:
         db.update(conn, "shops", shop_id, {"twilio_number": None})
-    return _back_to_shop(shop_id, phone_ok=f"Released {pretty_phone(shop['twilio_number'])}. "
-                                           "It no longer rings the assistant or costs anything.")
+    return _back_to_shop(shop_id, phone_ok=msg)
 
 
 def _back_to_calendar(shop_id: int, **msg) -> RedirectResponse:
