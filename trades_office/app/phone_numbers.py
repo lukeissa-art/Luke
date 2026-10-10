@@ -112,14 +112,15 @@ def connect_number(number: str, shop) -> str:
     return owned.phone_number
 
 
-def release_number(number: str) -> None:
-    """Give the number back to Twilio so it stops costing money."""
+def release_number(number: str) -> bool:
+    """Give the number back to Twilio so it stops costing money. False if it wasn't on the account."""
     client = _client()
     owned = _find_owned(client, number)
     if owned is None:
-        return  # already gone from the account
+        return False  # never bought on this account (e.g. the demo number), or already released
     try:
         client.incoming_phone_numbers(owned.sid).delete()
     except Exception as exc:
         log.exception("Twilio number release failed")
         raise PhoneNumberError(f"Twilio couldn't release the number: {_twilio_message(exc)}") from exc
+    return True

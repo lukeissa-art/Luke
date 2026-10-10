@@ -162,8 +162,8 @@
     <button class="secondary" {{ "disabled" if not twilio_enabled }}>Re-connect webhooks</button>
   </form>
   <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/phone/release"
-        onsubmit="return confirm('Release {{ shop.twilio_number|phone }}? Calls to it will stop working and the number goes back to Twilio. This cannot be undone.')">
-    <button class="secondary" style="color:var(--bad);border-color:var(--bad)" {{ "disabled" if not twilio_enabled }}>Release number</button>
+        onsubmit="return confirm('{{ "Release" if twilio_enabled else "Remove" }} {{ shop.twilio_number|phone }}? Calls to it will stop reaching the assistant{{ " and the number goes back to Twilio. This cannot be undone" if twilio_enabled }}.')">
+    <button class="secondary" style="color:var(--bad);border-color:var(--bad)">{{ "Release number" if twilio_enabled else "Remove number" }}</button>
   </form>
 
   <h3>Send the shop's calls to the assistant</h3>

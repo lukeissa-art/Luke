@@ -191,3 +191,22 @@ def test_changing_the_owners_phone_updates_the_fallback(client, conn, twilio_on)
     shop = db.get(conn, "shops", shop["id"])
     client.post(f"/admin/shops/{shop['id']}", data=_edit_form(shop, services="drains"), auth=AUTH)
     assert len(twilio_on.updated) == before
+
+
+def test_remove_number_works_without_twilio(client, conn):
+    # The demo shop's made-up number was never bought, and Twilio may not be connected at all.
+    shop = make_shop(conn, twilio_number="+15125550199")
+    page = client.get(f"/admin/shops/{shop['id']}", auth=AUTH).text
+    assert "Remove number</button>" in page
+    r = _post(client, f"/admin/shops/{shop['id']}/phone/release")
+    assert "phone_ok" in r.headers["location"]
+    assert db.get(conn, "shops", shop["id"])["twilio_number"] is None
+
+
+def test_release_number_not_on_twilio_account_just_removes_it(client, conn, twilio_on):
+    shop = make_shop(conn, twilio_number="+15125550111")
+    r = _post(client, f"/admin/shops/{shop['id']}/phone/release")
+    page = client.get(r.headers["location"], auth=AUTH).text
+    assert "wasn&#39;t on your Twilio account" in page
+    assert not twilio_on.deleted
+    assert db.get(conn, "shops", shop["id"])["twilio_number"] is None
