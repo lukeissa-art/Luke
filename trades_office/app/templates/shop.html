@@ -124,6 +124,17 @@
 <div class="card" id="phone"><h2>Phone line</h2>
   {% if phone_ok %}<p style="color:var(--ok)"><b>{{ phone_ok }}</b></p>{% endif %}
   {% if phone_err %}<p style="color:var(--bad)"><b>{{ phone_err }}</b></p>{% endif %}
+  {% if shop.owner_phone and shop.owner_phone_verified == shop.owner_phone %}
+  <p>Owner's phone: <b>{{ shop.owner_phone|phone }}</b> <span class="pill active">verified</span> · transfers, summaries and the backup go here.</p>
+  {% elif shop.owner_phone %}
+  <div style="border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+    <p style="margin:0 0 8px"><b style="color:var(--warn)">Owner's phone not verified:</b> {{ shop.owner_phone|phone }}. Transfers, call summaries and the backup ring this number, so confirm it's really the owner's (not a typo or a prank signup).</p>
+    <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/owner/send-code"><button class="secondary">Text them a code</button></form>
+    <form class="inline" method="post" action="/admin/shops/{{ shop.id }}/owner/verify">
+      <input name="code" inputmode="numeric" maxlength="6" placeholder="6-digit code" style="width:130px;display:inline-block" required>
+      <button class="secondary">Verify</button></form>
+  </div>
+  {% endif %}
   {% if shop.twilio_number %}
   <p>Assistant line: <b style="font-size:20px">{{ shop.twilio_number|phone }}</b>. Calls and texts to this number are answered by the assistant.</p>
   {% if fallback_url %}

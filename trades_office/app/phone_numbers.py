@@ -124,3 +124,33 @@ def release_number(number: str) -> bool:
         log.exception("Twilio number release failed")
         raise PhoneNumberError(f"Twilio couldn't release the number: {_twilio_message(exc)}") from exc
     return True
+
+
+def sync_all() -> int:
+    """Point every shop's number at this server's current address. Returns how many changed.
+
+    Runs at startup, so moving hosts or domains (or a typo fixed in PUBLIC_BASE_URL) can't leave
+    numbers calling a dead address. Numbers not on our Twilio account (e.g. the demo) are skipped.
+    """
+    s = get_settings()
+    if not s.twilio_enabled or s.is_local:
+        return 0
+    from . import db
+
+    with db.session() as conn:
+        shops = conn.execute("SELECT * FROM shops WHERE twilio_number IS NOT NULL").fetchall()
+    client, changed = sms._twilio(), 0
+    for shop in shops:
+        try:
+            owned = _find_owned(client, shop["twilio_number"])
+            if owned is None:
+                continue
+            want = webhooks(shop)
+            if any(getattr(owned, key, None) != want[key]
+                   for key in ("voice_url", "sms_url", "status_callback", "voice_fallback_url") if key in want):
+                client.incoming_phone_numbers(owned.sid).update(**want)
+                changed += 1
+                log.info("Re-pointed %s (%s) at %s", shop["twilio_number"], shop["name"], s.public_base_url)
+        except Exception:
+            log.exception("Couldn't sync webhooks for %s", shop["twilio_number"])
+    return changed

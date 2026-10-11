@@ -259,6 +259,54 @@ def release_phone_number(shop_id: int):
     return _back_to_shop(shop_id, phone_ok=msg)
 
 
+# Owner phone verification: text a code to the owner's phone and type it in on the setup call,
+# proving transfers and summaries go to the right person (not a typo or a prank signup).
+_verify_codes: dict[int, tuple[str, str, float]] = {}  # shop id -> (code, phone, expires)
+VERIFY_TTL = 15 * 60
+
+
+@router.post("/shops/{shop_id}/owner/send-code")
+def send_owner_code(shop_id: int):
+    import time
+
+    with db.session() as conn:
+        shop = db.get(conn, "shops", shop_id) or _404()
+    s = get_settings()
+    owner = shop["owner_phone"] or ""
+    sender = shop["twilio_number"] or s.company_sms_number
+    if not owner.startswith("+"):
+        return _back_to_shop(shop_id, phone_err="Add the owner's phone number in Edit setup first.")
+    if not s.twilio_enabled or not sender:
+        return _back_to_shop(shop_id, phone_err="Can't send texts yet: connect Twilio and give this shop a phone "
+                                                "line (or set COMPANY_SMS_NUMBER).")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    try:
+        from . import sms
+
+        sms._twilio().messages.create(to=owner, from_=sender,
+                                      body=f"{s.company_name}: your verification code is {code}")
+    except Exception as exc:
+        return _back_to_shop(shop_id, phone_err=f"Couldn't send the code: {getattr(exc, 'msg', exc)}")
+    _verify_codes[shop_id] = (code, owner, time.time() + VERIFY_TTL)
+    return _back_to_shop(shop_id, phone_ok=f"Code sent to {pretty_phone(owner)}. Ask the owner for it and enter it below.")
+
+
+@router.post("/shops/{shop_id}/owner/verify")
+def verify_owner_code(shop_id: int, code: str = Form("")):
+    import time
+
+    with db.session() as conn:
+        shop = db.get(conn, "shops", shop_id) or _404()
+        sent = _verify_codes.get(shop_id)
+        if not sent or time.time() > sent[2] or sent[1] != shop["owner_phone"]:
+            return _back_to_shop(shop_id, phone_err="That code expired. Send a new one.")
+        if not secrets.compare_digest(code.strip(), sent[0]):
+            return _back_to_shop(shop_id, phone_err="That code doesn't match. Check it and try again.")
+        db.update(conn, "shops", shop_id, {"owner_phone_verified": shop["owner_phone"]})
+    del _verify_codes[shop_id]
+    return _back_to_shop(shop_id, phone_ok=f"Verified: {pretty_phone(shop['owner_phone'])} belongs to the owner.")
+
+
 def _back_to_calendar(shop_id: int, **msg) -> RedirectResponse:
     return RedirectResponse(f"/admin/shops/{shop_id}?{urlencode(msg)}#calendar", status_code=303)
 
