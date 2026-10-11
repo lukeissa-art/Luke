@@ -168,6 +168,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     shop_cols = {r["name"] for r in conn.execute("PRAGMA table_info(shops)")}
     if "widget_key" not in shop_cols:
         conn.execute("ALTER TABLE shops ADD COLUMN widget_key TEXT")
+    if "owner_phone_verified" not in shop_cols:
+        # The owner phone number that passed a text-code check; stale as soon as owner_phone changes.
+        conn.execute("ALTER TABLE shops ADD COLUMN owner_phone_verified TEXT")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_widget_key ON shops(widget_key)")
     for row in conn.execute("SELECT id FROM shops WHERE widget_key IS NULL").fetchall():
         conn.execute("UPDATE shops SET widget_key = ? WHERE id = ?", (new_widget_key(), row["id"]))

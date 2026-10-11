@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,7 +18,13 @@ async def lifespan(_: FastAPI):
         from scripts import seed_demo
 
         seed_demo.main()
-    stop = worker.start_background() if get_settings().run_worker else None
+    stop = None
+    if get_settings().run_worker:
+        stop = worker.start_background()
+        # Re-point shops' numbers at this address in the background (doesn't delay startup).
+        from . import phone_numbers
+
+        threading.Thread(target=phone_numbers.sync_all, name="webhook-sync", daemon=True).start()
     yield
     if stop:
         stop.set()

@@ -61,6 +61,33 @@ def _was_accepted(call_sid: str) -> bool:
     return _accepted.pop(call_sid, None) is not None
 
 
+# Loop guard. If the owner's cell is the business line and forwards to the assistant, ringing the
+# owner sends the call straight back to us. We spot the bounce and answer it "busy", so the
+# original call falls through to the assistant instead of bouncing back and forth.
+_ringing_owner: dict[str, tuple[str, float]] = {}  # "shop:caller" -> (caller's CallSid, started)
+_BOUNCE_WINDOW = 60
+
+
+def _is_bounce(shop, p: dict[str, str]) -> bool:
+    caller, to = normalize_phone(p.get("From", "")), normalize_phone(p.get("To", ""))
+    if caller and caller == to:
+        return True  # our own transfer (caller ID = the shop's number) forwarded back to us
+    if not caller:
+        return False  # blocked/anonymous callers all look alike: never treat them as a bounce
+    started = _ringing_owner.get(f'{shop["id"]}:{caller}')
+    return bool(started and started[0] != p.get("CallSid") and time.time() - started[1] < _BOUNCE_WINDOW)
+
+
+def _start_ringing(shop, p: dict[str, str]) -> None:
+    _ringing_owner[f'{shop["id"]}:{normalize_phone(p.get("From", ""))}'] = (p.get("CallSid", ""), time.time())
+
+
+def _stop_ringing(call_sid: str) -> None:
+    for key, (sid, _) in list(_ringing_owner.items()):
+        if sid == call_sid:
+            del _ringing_owner[key]
+
+
 def owner_number(shop, call_sid: str) -> str:
     """The owner's phone inside a <Dial>, screened with "press 1 to take it"."""
     query = urlencode({"call": call_sid, "shop": shop["id"]})
@@ -104,6 +131,9 @@ def _voice_incoming(p: dict[str, str]):
         shop = db.shop_by_number(conn, p.get("To", ""))
         if shop is None:
             return twiml(say("Sorry, this number is not in service.") + "<Hangup/>")
+        if _is_bounce(shop, p):
+            log.info("Call to the owner of shop %s forwarded back to us; answering busy", shop["id"])
+            return twiml('<Reject reason="busy"/>')
         if shop["status"] not in ("trial", "active"):
             # Paused or cancelled: pass the call straight through to the owner.
             return twiml(f'<Dial>{escape(shop["owner_phone"])}</Dial>')
@@ -111,6 +141,7 @@ def _voice_incoming(p: dict[str, str]):
         # and the assistant picks up only if they don't answer.
         ring_owner_first = shop["answer_mode"] == "after_hours" or not get_plan(shop["plan"]).answers_24_7
         if ring_owner_first and scheduling.is_open_now(shop):
+            _start_ringing(shop, p)
             return twiml(f'<Dial timeout="20" action="{get_settings().public_base_url}/voice/no-answer">'
                          f'{owner_number(shop, p.get("CallSid", ""))}</Dial>')
         if calls.over_cap(conn, shop):
@@ -128,6 +159,7 @@ async def voice_no_answer(request: Request):
 
 
 def _voice_no_answer(p: dict[str, str]):
+    _stop_ringing(p.get("CallSid", ""))
     # "completed" only means *something* picked up; it was the owner only if they pressed 1.
     if _was_accepted(p.get("CallSid", "")) and p.get("DialCallStatus") == "completed":
         return twiml("<Hangup/>")
@@ -202,6 +234,7 @@ async def voice_status(request: Request):
 
 def _voice_status(p: dict[str, str]):
     if p.get("CallStatus") in ("completed", "busy", "failed", "no-answer", "canceled"):
+        _stop_ringing(p.get("CallSid", ""))
         with db.session() as conn:
             call = conn.execute("SELECT id FROM calls WHERE call_sid = ?", (p.get("CallSid", ""),)).fetchone()
             if call:
