@@ -6,6 +6,8 @@ Messaging webhook at /sms/incoming. The shop forwards calls to that number (all 
 """
 
 import logging
+import time
+from urllib.parse import urlencode
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -40,11 +42,40 @@ def gather(prompt: str) -> str:
     )
 
 
-def dial_owner(shop, caller_id: str) -> str:
-    return (f'<Dial callerId="{escape(caller_id)}" timeout="25">{escape(shop["owner_phone"])}</Dial>'
-            + say("Sorry, nobody picked up. We have your details and will call you back as soon as "
-                  "possible. Goodbye.")
-            + "<Hangup/>")
+# Call screening. When we ring the owner, they first hear "press 1 to take it". Their voicemail
+# can't press 1, so a call they don't really answer comes back to the assistant instead of
+# ending up in the owner's voicemail box.
+_accepted: dict[str, float] = {}  # caller's CallSid -> when the owner pressed 1
+_ACCEPTED_TTL = 6 * 3600
+
+
+def _mark_accepted(call_sid: str) -> None:
+    now = time.time()
+    for sid, at in list(_accepted.items()):
+        if now - at > _ACCEPTED_TTL:
+            del _accepted[sid]
+    _accepted[call_sid] = now
+
+
+def _was_accepted(call_sid: str) -> bool:
+    return _accepted.pop(call_sid, None) is not None
+
+
+def owner_number(shop, call_sid: str) -> str:
+    """The owner's phone inside a <Dial>, screened with "press 1 to take it"."""
+    query = urlencode({"call": call_sid, "shop": shop["id"]})
+    url = f"{get_settings().public_base_url}/voice/screen?{query}"
+    return f'<Number url="{escape(url)}" method="POST">{escape(shop["owner_phone"])}</Number>'
+
+
+def dial_owner(shop, caller_id: str, call_sid: str) -> str:
+    action = f"{get_settings().public_base_url}/voice/transfer-done"
+    return (f'<Dial callerId="{escape(caller_id)}" timeout="25" action="{action}">'
+            f'{owner_number(shop, call_sid)}</Dial>')
+
+
+NOBODY_PICKED_UP = ("Sorry, nobody picked up. We have your details and will call you back as soon as "
+                    "possible. Goodbye.")
 
 
 async def _form(request: Request) -> dict[str, str]:
@@ -54,7 +85,8 @@ async def _form(request: Request) -> dict[str, str]:
     if s.twilio_enabled and s.twilio_validate_signatures:
         from twilio.request_validator import RequestValidator
 
-        url = f"{s.public_base_url}{request.url.path}"
+        # Twilio signs the full URL it called, query string included.
+        url = f"{s.public_base_url}{request.url.path}" + (f"?{request.url.query}" if request.url.query else "")
         signature = request.headers.get("X-Twilio-Signature", "")
         if not RequestValidator(s.twilio_auth_token).validate(url, params, signature):
             raise HTTPException(status_code=403, detail="Invalid Twilio signature")
@@ -80,7 +112,7 @@ def _voice_incoming(p: dict[str, str]):
         ring_owner_first = shop["answer_mode"] == "after_hours" or not get_plan(shop["plan"]).answers_24_7
         if ring_owner_first and scheduling.is_open_now(shop):
             return twiml(f'<Dial timeout="20" action="{get_settings().public_base_url}/voice/no-answer">'
-                         f'{escape(shop["owner_phone"])}</Dial>')
+                         f'{owner_number(shop, p.get("CallSid", ""))}</Dial>')
         if calls.over_cap(conn, shop):
             log.warning("Shop %s is over its monthly call cap; passing call through", shop["id"])
             return twiml(f'<Dial>{escape(shop["owner_phone"])}</Dial>')
@@ -96,7 +128,8 @@ async def voice_no_answer(request: Request):
 
 
 def _voice_no_answer(p: dict[str, str]):
-    if p.get("DialCallStatus") == "completed":
+    # "completed" only means *something* picked up; it was the owner only if they pressed 1.
+    if _was_accepted(p.get("CallSid", "")) and p.get("DialCallStatus") == "completed":
         return twiml("<Hangup/>")
     with db.session() as conn:
         shop = db.shop_by_number(conn, p.get("To", ""))
@@ -121,11 +154,43 @@ def _voice_respond(p: dict[str, str]):
         turn = Receptionist(conn, shop, call).respond(p.get("SpeechResult", ""))
         if turn.action == "transfer":
             calls.finalize_call(conn, call["id"], status="transferred")
-            return twiml(say(turn.say) + dial_owner(shop, shop["twilio_number"]))
+            return twiml(say(turn.say) + dial_owner(shop, shop["twilio_number"], p.get("CallSid", "")))
         if turn.action == "hangup":
             calls.finalize_call(conn, call["id"])
             return twiml(say(turn.say) + "<Hangup/>")
         return twiml(gather(turn.say))
+
+
+@router.post("/voice/screen")
+async def voice_screen(request: Request, call: str = "", shop: int = 0):
+    """Played to the owner when their phone is answered, before the caller is connected."""
+    await _form(request)
+    with db.session() as conn:
+        row = db.get(conn, "shops", shop)
+    name = row["name"] if row else "your shop"
+    action = f"{get_settings().public_base_url}/voice/screen-result?{urlencode({'call': call})}"
+    prompt = say(f"Call for {name} from your assistant. Press 1 to take it.")
+    # One short prompt: the caller hears ringing until the owner presses 1 or this hangs up.
+    return twiml(f'<Gather numDigits="1" timeout="5" action="{escape(action)}" method="POST">'
+                 f'{prompt}</Gather><Hangup/>')
+
+
+@router.post("/voice/screen-result")
+async def voice_screen_result(request: Request, call: str = ""):
+    p = await _form(request)
+    if p.get("Digits") == "1" and call:
+        _mark_accepted(call)
+        return twiml("")  # an empty response connects the owner to the caller
+    return twiml("<Hangup/>")
+
+
+@router.post("/voice/transfer-done")
+async def voice_transfer_done(request: Request):
+    """After a transfer: if the owner never really took it, tell the caller we'll call back."""
+    p = await _form(request)
+    if _was_accepted(p.get("CallSid", "")) and p.get("DialCallStatus") == "completed":
+        return twiml("<Hangup/>")
+    return twiml(say(NOBODY_PICKED_UP) + "<Hangup/>")
 
 
 @router.post("/voice/status")
