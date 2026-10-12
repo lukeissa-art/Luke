@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_validate_signatures: bool = True
     tts_voice: str = "Polly.Joanna-Neural"
+    # Seconds of silence that end the caller's turn. "auto" lets Twilio decide, which adds 1-2s.
+    speech_timeout: str = "1"
 
     # Stripe
     stripe_api_key: str = ""

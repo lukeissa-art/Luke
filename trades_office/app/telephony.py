@@ -7,6 +7,8 @@ Messaging webhook at /sms/incoming. The shop forwards calls to that number (all 
 
 import logging
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from urllib.parse import urlencode
 from xml.sax.saxutils import escape
 
@@ -35,7 +37,7 @@ def gather(prompt: str) -> str:
     s = get_settings()
     action = f"{s.public_base_url}/voice/respond"
     return (
-        f'<Gather input="speech" action="{action}" method="POST" speechTimeout="auto" '
+        f'<Gather input="speech" action="{action}" method="POST" speechTimeout="{s.speech_timeout}" '
         f'speechModel="phone_call" enhanced="true" actionOnEmptyResult="true" timeout="6">'
         f"{say(prompt)}</Gather>"
         f'<Redirect method="POST">{action}</Redirect>'
@@ -173,6 +175,19 @@ def _voice_no_answer(p: dict[str, str]):
         return twiml(gather(greeting(shop)))
 
 
+# Slow replies. Twilio gives up on a webhook after 15 seconds, and a turn that books a job can
+# take the model longer than that. The reply is worked out in the background: if it isn't ready
+# quickly, the caller hears "one moment" and Twilio comes back to /voice/hold for it.
+REPLY_WAIT_SECONDS = 4.0
+HOLD_WAIT_SECONDS = 10.0
+MAX_HOLD_SECONDS = 45.0
+HOLD_PROMPT = "One moment."
+TROUBLE = "I'm sorry, I'm having trouble on my end. Let me connect you to the team."
+
+_replies = ThreadPoolExecutor(max_workers=8, thread_name_prefix="voice-reply")
+_pending: dict[str, tuple[Future, float]] = {}  # CallSid -> (reply being worked out, started)
+
+
 @router.post("/voice/respond")
 async def voice_respond(request: Request):
     p = await _form(request)
@@ -180,19 +195,58 @@ async def voice_respond(request: Request):
 
 
 def _voice_respond(p: dict[str, str]):
+    sid = p.get("CallSid", "")
+    _pending[sid] = (_replies.submit(_reply, sid, p.get("SpeechResult", "")), time.time())
+    return _await_reply(p, REPLY_WAIT_SECONDS, say(HOLD_PROMPT))
+
+
+@router.post("/voice/hold")
+async def voice_hold(request: Request):
+    """The caller is on "one moment": wait a little longer for the reply."""
+    p = await _form(request)
+    return await run_in_threadpool(_await_reply, p, HOLD_WAIT_SECONDS, "")
+
+
+def _await_reply(p: dict[str, str], wait: float, hold: str):
+    sid = p.get("CallSid", "")
+    pending = _pending.get(sid)
+    if pending is None:
+        return twiml("<Hangup/>")
+    future, started = pending
+    try:
+        xml = future.result(timeout=wait)
+    except FutureTimeout:
+        if time.time() - started < MAX_HOLD_SECONDS:
+            return twiml(f'{hold}<Redirect method="POST">{get_settings().public_base_url}/voice/hold</Redirect>')
+        _pending.pop(sid, None)
+        log.error("Reply on call %s took over %ss; transferring to owner", sid, MAX_HOLD_SECONDS)
+        with db.session() as conn:
+            shop = db.shop_by_number(conn, p.get("To", ""))
+            if shop is None:
+                return twiml("<Hangup/>")
+            return twiml(say(TROUBLE) + dial_owner(shop, shop["twilio_number"], sid))
+    except Exception:
+        _pending.pop(sid, None)
+        raise
+    _pending.pop(sid, None)
+    return twiml(xml)
+
+
+def _reply(call_sid: str, speech: str) -> str:
+    """One caller turn, as the TwiML to play next."""
     with db.session() as conn:
-        call = conn.execute("SELECT * FROM calls WHERE call_sid = ?", (p.get("CallSid", ""),)).fetchone()
+        call = conn.execute("SELECT * FROM calls WHERE call_sid = ?", (call_sid,)).fetchone()
         if call is None:
-            return twiml("<Hangup/>")
+            return "<Hangup/>"
         shop = db.get(conn, "shops", call["shop_id"])
-        turn = Receptionist(conn, shop, call).respond(p.get("SpeechResult", ""))
+        turn = Receptionist(conn, shop, call).respond(speech)
         if turn.action == "transfer":
             calls.finalize_call(conn, call["id"], status="transferred")
-            return twiml(say(turn.say) + dial_owner(shop, shop["twilio_number"], p.get("CallSid", "")))
+            return say(turn.say) + dial_owner(shop, shop["twilio_number"], call_sid)
         if turn.action == "hangup":
             calls.finalize_call(conn, call["id"])
-            return twiml(say(turn.say) + "<Hangup/>")
-        return twiml(gather(turn.say))
+            return say(turn.say) + "<Hangup/>"
+        return gather(turn.say)
 
 
 @router.post("/voice/screen")
@@ -237,6 +291,7 @@ async def voice_status(request: Request):
 def _voice_status(p: dict[str, str]):
     if p.get("CallStatus") in ("completed", "busy", "failed", "no-answer", "canceled"):
         _stop_ringing(p.get("CallSid", ""))
+        _pending.pop(p.get("CallSid", ""), None)
         with db.session() as conn:
             call = conn.execute("SELECT id FROM calls WHERE call_sid = ?", (p.get("CallSid", ""),)).fetchone()
             if call:
