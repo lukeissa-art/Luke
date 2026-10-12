@@ -81,3 +81,10 @@ def test_signature_check_covers_the_query_string(client, conn, monkeypatch):
     good = RequestValidator("secret-token").compute_signature("https://www.tradedeskuse.com" + path, data)
     assert client.post(path, data=data, headers={"X-Twilio-Signature": good}).status_code == 200
     assert client.post(path, data=data, headers={"X-Twilio-Signature": "forged"}).status_code == 403
+
+
+def test_caller_who_hung_up_while_owner_rang_doesnt_start_a_conversation(client, conn, ringing_owner):
+    _call(client, "/voice/incoming")
+    r = _call(client, "/voice/no-answer", DialCallStatus="no-answer", CallStatus="completed")
+    assert "<Hangup/>" in r.text and "<Gather" not in r.text
+    assert conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0] == 0
