@@ -36,8 +36,15 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_validate_signatures: bool = True
     tts_voice: str = "Polly.Joanna-Neural"
-    # Seconds of silence that end the caller's turn. "auto" lets Twilio decide, which adds 1-2s.
-    speech_timeout: str = "1"
+    # Seconds of silence that end the caller's turn on the classic line. "auto" lets Twilio judge
+    # natural pauses ("uh, my sink is... leaking"); a number like 1 is snappier but cuts people off.
+    speech_timeout: str = "auto"
+    # "gather": the classic line (AI talks, then listens). "relay": Twilio ConversationRelay, a
+    # real conversation (interruptions, speakerphone, natural pauses, replies spoken as written).
+    voice_engine: str = "gather"
+    relay_tts_provider: str = ""  # optional: Twilio's default when blank (e.g. ElevenLabs, Google, Amazon)
+    relay_voice: str = ""  # optional voice name for that provider
+    relay_transcription_provider: str = ""  # optional: Twilio's default when blank (e.g. Deepgram, Google)
 
     # Stripe
     stripe_api_key: str = ""

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from . import admin, billing, db, sales, site, telephony, widget, worker
+from . import admin, billing, db, relay, sales, site, telephony, widget, worker
 from .config import get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -35,6 +35,7 @@ app.include_router(site.router)
 app.include_router(sales.router)
 app.include_router(widget.router)
 app.include_router(telephony.router)
+app.include_router(relay.router)
 app.include_router(billing.router)
 app.include_router(admin.router, prefix="/admin")
 

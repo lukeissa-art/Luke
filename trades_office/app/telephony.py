@@ -37,7 +37,7 @@ def gather(prompt: str) -> str:
     s = get_settings()
     action = f"{s.public_base_url}/voice/respond"
     return (
-        f'<Gather input="speech" action="{action}" method="POST" speechTimeout="{s.speech_timeout}" '
+        f'<Gather input="speech" action="{action}" method="POST" speechTimeout="{s.speech_timeout}" bargeIn="false" '
         f'speechModel="phone_call" enhanced="true" actionOnEmptyResult="true" timeout="6">'
         f"{say(prompt)}</Gather>"
         f'<Redirect method="POST">{action}</Redirect>'
@@ -97,6 +97,13 @@ def owner_number(shop, call_sid: str) -> str:
     return f'<Number url="{escape(url)}" method="POST">{escape(shop["owner_phone"])}</Number>'
 
 
+def answer(shop, call_sid: str) -> str:
+    """Start the AI conversation: ConversationRelay when VOICE_ENGINE=relay, else the classic line."""
+    from . import relay
+
+    return relay.relay_twiml(shop, call_sid) if relay.enabled() else gather(greeting(shop))
+
+
 def dial_owner(shop, caller_id: str, call_sid: str) -> str:
     action = f"{get_settings().public_base_url}/voice/transfer-done"
     return (f'<Dial callerId="{escape(caller_id)}" timeout="25" action="{action}">'
@@ -150,7 +157,7 @@ def _voice_incoming(p: dict[str, str]):
             log.warning("Shop %s is over its monthly call cap; passing call through", shop["id"])
             return twiml(f'<Dial>{escape(shop["owner_phone"])}</Dial>')
         calls.start_call(conn, shop, p.get("CallSid", ""), p.get("From", ""))
-        return twiml(gather(greeting(shop)))
+        return twiml(answer(shop, p.get("CallSid", "")))
 
 
 @router.post("/voice/no-answer")
@@ -172,7 +179,7 @@ def _voice_no_answer(p: dict[str, str]):
         if shop is None:
             return twiml("<Hangup/>")
         calls.start_call(conn, shop, p.get("CallSid", ""), p.get("From", ""))
-        return twiml(gather(greeting(shop)))
+        return twiml(answer(shop, p.get("CallSid", "")))
 
 
 # Slow replies. Twilio gives up on a webhook after 15 seconds, and a turn that books a job can

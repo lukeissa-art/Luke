@@ -85,6 +85,10 @@ On a shop's dashboard page, under **Phone line**, type an area code and click **
 
 The shop keeps its own number and forwards calls to the assistant line: all calls after hours, or just the ones they don't answer. The page lists the forwarding codes for Verizon, AT&T, T-Mobile and office phone systems. This needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and a public https address. On Render, use a paid instance for real calls so the server never sleeps.
 
+## Natural phone conversations (ConversationRelay)
+
+By default the phone line takes turns: the AI talks, then listens. Set `VOICE_ENGINE=relay` to switch to Twilio ConversationRelay, a real conversation: the caller can interrupt the AI mid-sentence, speakerphone echo is handled, natural pauses don't cut people off, and replies start playing as the AI writes them. Same AI, tools, booking and emergency rules. Twilio adds a small per-minute charge for it. Optional: `RELAY_TTS_PROVIDER` / `RELAY_VOICE` to pick the voice, `RELAY_TRANSCRIPTION_PROVIDER` for speech recognition. Delete `VOICE_ENGINE` to go straight back to the classic line. If a relay session ever fails, the caller is sent to the owner, never dropped.
+
 ## The website
 
 - `/` home page, `/privacy`, `/terms`, `/thanks`. The privacy policy includes the SMS wording Twilio's A2P 10DLC review looks for.
