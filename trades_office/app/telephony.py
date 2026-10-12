@@ -163,6 +163,8 @@ def _voice_no_answer(p: dict[str, str]):
     # "completed" only means *something* picked up; it was the owner only if they pressed 1.
     if _was_accepted(p.get("CallSid", "")) and p.get("DialCallStatus") == "completed":
         return twiml("<Hangup/>")
+    if p.get("CallStatus") in ("completed", "canceled", "failed", "busy", "no-answer"):
+        return twiml("<Hangup/>")  # the caller hung up while the owner's phone rang: nobody to answer
     with db.session() as conn:
         shop = db.shop_by_number(conn, p.get("To", ""))
         if shop is None:
