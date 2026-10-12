@@ -85,5 +85,6 @@ def test_quick_reply_needs_no_hold(client, live_call, monkeypatch):
     assert "One moment" not in r.text
 
 
-def test_turn_ends_after_one_second_of_silence():
-    assert 'speechTimeout="1"' in telephony.gather("Hi")
+def test_classic_line_waits_for_natural_pauses_and_ignores_its_own_voice():
+    xml = telephony.gather("Hi")
+    assert 'speechTimeout="auto"' in xml and 'bargeIn="false"' in xml
