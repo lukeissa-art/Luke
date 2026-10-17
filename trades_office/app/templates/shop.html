@@ -156,13 +156,13 @@
   <div class="row">
     <form method="post" action="/admin/shops/{{ shop.id }}/phone/buy">
       <label>Get a new number: area code</label>
-      <div style="display:flex;gap:8px"><input name="area_code" inputmode="numeric" maxlength="3" pattern="[0-9]{3}" placeholder="512" required style="max-width:110px">
+      <div style="display:flex;gap:8px"><input name="area_code" inputmode="numeric" maxlength="3" pattern="[0-9]{3}" placeholder="515" required style="max-width:110px">
         <button {{ "disabled" if not twilio_enabled }}>Get a phone number</button></div>
       <p class="muted">Buys a local number, connects it to the assistant, and saves it here.</p>
     </form>
     <form method="post" action="/admin/shops/{{ shop.id }}/phone/connect">
       <label>Or connect a number already on your Twilio account</label>
-      <div style="display:flex;gap:8px"><input name="number" type="tel" placeholder="(512) 555-0100" required>
+      <div style="display:flex;gap:8px"><input name="number" type="tel" placeholder="(515) 555-0100" required>
         <button class="secondary" {{ "disabled" if not twilio_enabled }}>Connect</button></div>
       <p class="muted">Use this for a number you bought or ported into Twilio yourself.</p>
     </form>

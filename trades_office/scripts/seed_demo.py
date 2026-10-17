@@ -10,12 +10,18 @@ from app import db
 from app.plans import TRIAL_DAYS
 
 
+DEMO_AREA = "Ames, Ankeny, Boone, Nevada, Story City, Huxley and Gilbert"
+OLD_DEMO_AREA = "Austin, Round Rock, Pflugerville and Cedar Park"
+
 def main() -> int:
     db.init_db()
     now = db.utcnow()
     with db.session() as conn:
         existing = conn.execute("SELECT id FROM shops WHERE name = 'Riverside Plumbing & Heating'").fetchone()
         if existing:
+            # One-time move of the demo shop from its original Texas setup to Ames.
+            conn.execute("UPDATE shops SET service_area = ? WHERE id = ? AND service_area = ?",
+                         (DEMO_AREA, existing["id"], OLD_DEMO_AREA))
             print(f"Demo shop already exists (id {existing['id']})")
             return existing["id"]
         shop_id = db.insert(conn, "shops", {
@@ -25,9 +31,10 @@ def main() -> int:
             "owner_phone": "+15125550100",
             "twilio_number": "+15125550199",
             "timezone": "America/Chicago",
-            "service_area": "Austin, Round Rock, Pflugerville and Cedar Park",
-            "services": "Leak repair, drain cleaning, water heaters (tank and tankless), toilets, faucets, "
-                        "garbage disposals, sewer line camera inspections, gas line repair",
+            "service_area": DEMO_AREA,
+            "services": "Furnace and boiler repair, no-heat calls, frozen and burst pipes, leak repair, drain cleaning, "
+                        "water heaters (tank and tankless), sump pumps, toilets, faucets, sewer line camera "
+                        "inspections, gas line repair",
             "pricing_notes": "$89 service call, waived if the customer goes ahead with the repair. "
                              "After-hours emergency visits are $189.",
             "extra_instructions": "We don't do septic systems or well pumps. Commercial jobs: take a message for Dave.",

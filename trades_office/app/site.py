@@ -34,6 +34,7 @@ def site_context(**extra) -> dict:
         "contact_email": s.contact_email,
         "demo_phone": s.demo_phone_number,
         "region": s.service_region,
+        "towns": [t.strip() for t in s.service_towns.split(",") if t.strip()],
         "plans": PLANS,
         "setup_fee": SETUP_FEE,
         "trial_days": TRIAL_DAYS,
@@ -73,7 +74,7 @@ def _validate_lead(form) -> tuple[dict, dict]:
         errors["shop_name"] = "Add your shop's name."
     phone = normalize_phone(values["phone"])
     if not phone:
-        errors["phone"] = "Enter a 10-digit US phone number, like 512-555-0123."
+        errors["phone"] = "Enter a 10-digit US phone number, like 515-555-0123."
     values["phone"] = phone or values["phone"]
     if values["email"] and "@" not in values["email"]:
         errors["email"] = "That email address is missing an @."

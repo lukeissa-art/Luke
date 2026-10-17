@@ -65,7 +65,7 @@ def buy_number(area_code: str, shop) -> str:
     """Buy a local voice + SMS number in the area code and connect it. Returns it in E.164 form."""
     area_code = re.sub(r"\D", "", area_code or "")
     if len(area_code) != 3:
-        raise PhoneNumberError("Enter a 3-digit area code, like 512.")
+        raise PhoneNumberError("Enter a 3-digit area code, like 515.")
     client = _client()
     try:
         found = client.available_phone_numbers("US").local.list(

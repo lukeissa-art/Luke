@@ -31,7 +31,7 @@ services:
       - key: COMPANY_NAME
         value: TradeDesk AI
       - key: SERVICE_REGION
-        value: Central Texas
+        value: Ames, Iowa
       - key: CONTACT_EMAIL
         sync: false
       - key: GEMINI_API_KEY

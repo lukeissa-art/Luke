@@ -64,7 +64,9 @@ class Settings(BaseSettings):
     company_sms_number: str = ""  # Twilio number the founder alerts are sent from
     public_demo_shop_id: int = 0  # shop the website's "try it" demo talks to; 0 turns the demo off
     demo_phone_number: str = ""  # optional real demo line shown on the website
-    service_region: str = "Central Texas"
+    service_region: str = "Ames, Iowa"
+    # Towns listed under "Where we set up shops" on the website (comma-separated)
+    service_towns: str = "Ames, Ankeny, Boone, Nevada, Story City, Huxley, Gilbert, Slater, Marshalltown, Des Moines metro"
 
     # Follow-up timing
     unbooked_followup_minutes: int = 15
